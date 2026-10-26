@@ -1,6 +1,8 @@
 package com.example.weatherwidget
 
 import android.Manifest
+import android.appwidget.AppWidgetManager
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -51,6 +53,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WeatherWorker.schedulePeriodic(this)
+        // ウィジェットの「編集」から開かれたときは、閉じてもウィジェットが消えないよう OK を返しておく
+        val widgetId = intent?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+            ?: AppWidgetManager.INVALID_APPWIDGET_ID
+        if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+            setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
+        }
         setContent {
             val context = LocalContext.current
             val dark = isSystemInDarkTheme()

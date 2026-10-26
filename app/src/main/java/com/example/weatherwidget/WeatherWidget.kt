@@ -1,6 +1,7 @@
 package com.example.weatherwidget
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
@@ -18,6 +19,7 @@ import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.actionStartActivity
+import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
@@ -141,12 +143,13 @@ private fun WidgetContent() {
     val place = prefs[WeatherWidget.KEY_PLACE] ?: WeatherStore.DEFAULT.name
     val days = weather?.daily?.take(prefs[WeatherWidget.KEY_DAYS] ?: WeatherStore.DEFAULT_DAYS).orEmpty()
     val size = LocalSize.current
+    val context = LocalContext.current
     val m = Metrics(
         width = size.width,
         height = size.height,
         columns = days.size.coerceAtLeast(1),
         scalePercent = prefs[WeatherWidget.KEY_TEXT_SCALE] ?: 100,
-        fontScale = LocalContext.current.resources.configuration.fontScale,
+        fontScale = context.resources.configuration.fontScale,
     )
 
     Column(
@@ -155,7 +158,7 @@ private fun WidgetContent() {
             .cornerRadius(20.dp)
             .background(BACKGROUND)
             .padding(m.padding)
-            .clickable(actionStartActivity<MainActivity>()),
+            .clickable(tapAction(context)),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -179,6 +182,14 @@ private fun WidgetContent() {
         }
     }
 }
+
+private const val YAHOO_WEATHER = "jp.co.yahoo.android.weather.type1"
+
+/** タップで Yahoo!天気 を開く。入っていなければこのアプリの設定画面を開く。 */
+private fun tapAction(context: Context) =
+    context.packageManager.getLaunchIntentForPackage(YAHOO_WEATHER)
+        ?.let { actionStartActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        ?: actionStartActivity<MainActivity>()
 
 @Composable
 private fun DayColumn(day: DailyForecast, m: Metrics) {
