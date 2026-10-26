@@ -13,6 +13,7 @@ import android.widget.FrameLayout
 /**
  * 確認用の画面。先に `adb shell appwidget grantbind --package com.example.weatherwidget` で許可しておく。
  * intent の extra で大きさ（dp）を変えられる：--ei w 360 --ei h 130
+ * AppWidgetHostView は四方に 8dp の余白を足すので、その分を大きくして、中身が w × h になるようにしてある。
  */
 class WidgetHostActivity : Activity() {
     private lateinit var host: AppWidgetHost
@@ -41,7 +42,7 @@ class WidgetHostActivity : Activity() {
         val view = host.createView(this, id, manager.getAppWidgetInfo(id))
         fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
         val frame = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#3C6E91")) }
-        frame.addView(view, FrameLayout.LayoutParams(dp(w), dp(h), Gravity.CENTER_HORIZONTAL or Gravity.TOP).apply { topMargin = dp(80) })
+        frame.addView(view, FrameLayout.LayoutParams(dp(w + 16), dp(h + 16), Gravity.CENTER_HORIZONTAL or Gravity.TOP).apply { topMargin = dp(80) })
         setContentView(frame)
         WidgetRenderer.updateAll(this)
     }

@@ -79,6 +79,9 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
 private const val ARROW_WIDTH_DP = 22f
 private const val PADDING_DP = 8f
 
+/** この高さ（dp）より低いときは、ホーム画面の1行分の表示にする（地名と降水確率を隠す）。 */
+private const val COMPACT_HEIGHT_DP = 105
+
 /** 気温の数字の大きさ（日付の文字を 1 として）。 */
 private const val TEMP_SCALE = 1.5f
 
@@ -122,13 +125,14 @@ object WidgetRenderer {
         state(context).edit().putLong(versionKey(id), appVersion(context)).apply()
         rv.setTextViewText(R.id.place, store.place.name)
         rv.setTextViewTextSize(R.id.place, TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.15f)
+        rv.setViewVisibility(R.id.place, if (m.compact) View.GONE else View.VISIBLE)
 
         // ホーム画面は前に作った部品に上書きで当てはめるので、出す・隠すは毎回両方を指定する
         val ready = forecast != null && forecast.days.isNotEmpty()
         rv.setViewVisibility(R.id.days_frame, if (ready) View.VISIBLE else View.GONE)
         rv.setViewVisibility(R.id.zones, if (ready) View.VISIBLE else View.GONE)
         // 日の並びは、地名の行の下で、左右に矢印の分をあけて、残りの高さの真ん中に置く
-        rv.setViewPadding(R.id.days_frame, m.dp(ARROW_WIDTH_DP), m.daysTop(), m.dp(ARROW_WIDTH_DP), m.dp(PADDING_DP))
+        rv.setViewPadding(R.id.days_frame, m.dp(ARROW_WIDTH_DP), m.daysTop(), m.dp(ARROW_WIDTH_DP), m.padding())
         rv.setViewVisibility(R.id.message, if (ready) View.GONE else View.VISIBLE)
         if (forecast == null || !ready) {
             val error = store.lastError
@@ -183,7 +187,7 @@ object WidgetRenderer {
             rv.setViewVisibility(on, if (enabled) View.VISIBLE else View.GONE)
             rv.setViewVisibility(off, if (enabled) View.GONE else View.VISIBLE)
             if (!withIntents) return
-            for (zone in intArrayOf(on, off)) rv.setViewPadding(zone, 0, m.daysTop(), 0, m.dp(PADDING_DP))
+            for (zone in intArrayOf(on, off)) rv.setViewPadding(zone, 0, m.daysTop(), 0, m.padding())
             rv.setTextViewTextSize(onArrow, TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.8f)
             rv.setTextViewTextSize(offArrow, TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.8f)
             val request = id * 4 + if (delta > 0) 1 else 0
@@ -267,6 +271,7 @@ object WidgetRenderer {
         rv.setTextViewText(R.id.day_bottom, bottom?.first ?: "")
         rv.setTextColor(R.id.day_bottom, if (bottom?.second == true) BLUE else WHITE)
         rv.setTextViewTextSize(R.id.day_bottom, TypedValue.COMPLEX_UNIT_DIP, m.unit)
+        rv.setViewVisibility(R.id.day_bottom, if (m.compact) View.GONE else View.VISIBLE)
         return rv
     }
 
@@ -291,14 +296,17 @@ object WidgetRenderer {
      * 1列の幅に「20℃ / 10℃」が収まり、縦に全部の行が収まる大きさを基本にし、設定の％を掛ける。
      * 大きさは dp で指定するので、端末の文字サイズ設定には左右されない。
      */
-    class Metrics(val unit: Float, val density: Float) {
+    class Metrics(val unit: Float, val density: Float, val compact: Boolean) {
+        /** 上下の余白。1行分のときは詰める。 */
+        fun padding(): Int = dp(if (compact) 4f else PADDING_DP)
+
         fun px(factor: Float): Int = (unit * factor * density).toInt().coerceAtLeast(1)
 
         /** dp を画素にする。 */
         fun dp(dp: Float): Int = (dp * density).toInt()
 
         /** 日の並びの上の余白（地名の行の分）。矢印も日の並びの高さの真ん中にそろえる。 */
-        fun daysTop(): Int = dp(PADDING_DP) + px(1.15f * 1.4f + 0.3f)
+        fun daysTop(): Int = if (compact) padding() else padding() + px(1.15f * 1.4f + 0.3f)
     }
 
     private fun metrics(context: Context, manager: AppWidgetManager, id: Int, store: WeatherStore, forecast: Forecast?): Metrics {
@@ -309,9 +317,15 @@ object WidgetRenderer {
         val columns = store.days.coerceAtMost(forecast?.days?.size ?: store.days).coerceAtLeast(1)
         val columnWidth = (width - ARROW_WIDTH_DP * 2) / columns
         val byWidth = columnWidth / 5.6f
-        val byHeight = (height - PADDING_DP * 2) / (7.4f + TEMP_SCALE - 1f)
-        val unit = minOf(byWidth, byHeight).coerceIn(6f, 48f) * store.textScale / 100f
-        return Metrics(unit, context.resources.displayMetrics.density)
+        // 1行分のときは地名と降水確率の行がないので、そのぶん高さを見込まない。
+        // 行の高さは文字の大きさの 1.25 倍として、日付 1.25 ＋ すきま 0.4 ＋ アイコン 2.1 ＋ 気温（TEMP_SCALE 倍）
+        val compact = height < COMPACT_HEIGHT_DP
+        val rows = 1.25f + 0.4f + 2.1f + 1.25f * TEMP_SCALE +
+            (if (compact) 0f else (1.15f * 1.4f + 0.3f) + 1.25f) // 地名の行と降水確率の行
+        val edge = if (compact) 4f else PADDING_DP
+        val byHeight = (height - edge * 2 - 4f) / rows // 4dp は日ごとの枠の上下の余白
+        val unit = minOf(byWidth, byHeight).coerceIn(4f, 48f) * store.textScale / 100f
+        return Metrics(unit, context.resources.displayMetrics.density, compact)
     }
 
     private fun ids(context: Context, manager: AppWidgetManager): IntArray =
