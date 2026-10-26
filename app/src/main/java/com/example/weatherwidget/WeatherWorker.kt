@@ -2,6 +2,7 @@ package com.example.weatherwidget
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -38,6 +39,9 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             store.lastError = null
             WidgetRenderer.updateAll(applicationContext)
             Result.success()
+        } catch (e: CancellationException) {
+            // 取り消された（新しい更新に置き換えられた）だけなので、失敗として残さない
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "予報を更新できませんでした", e)
             store.lastError = e.toString().take(200)
@@ -63,12 +67,13 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                 .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
         }
 
-        fun refreshNow(context: Context) {
+        /** replace が false なら、すでに動いている更新があればそれに任せる（置いた直後などに重なって取り消し合わないように）。 */
+        fun refreshNow(context: Context, replace: Boolean = true) {
             val request = OneTimeWorkRequestBuilder<WeatherWorker>()
                 .setConstraints(network)
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(NOW, ExistingWorkPolicy.REPLACE, request)
+                .enqueueUniqueWork(NOW, if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
         }
 
         fun cancelPeriodic(context: Context) {

@@ -24,11 +24,15 @@ import java.util.Locale
  * ホーム画面のウィジェット。
  * 送りを速くするため、表示できる範囲（ページ）を全部 ViewFlipper に入れて渡しておき、
  * 押されたら「何枚目を見せるか」だけを送る（partiallyUpdateAppWidget）。
- * 先へ送るときと過去へ送るときでアニメーションの向きが違うので、ViewFlipper を2つ持ち、見せる方を切り替える。
  */
 class WeatherWidgetReceiver : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            // 新しい版を入れたら、ウィジェットを新しい版で作り直す
+            WidgetRenderer.updateAll(context)
+            return
+        }
         if (intent.action == ACTION_SHIFT) {
             val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
             val delta = intent.getIntExtra(EXTRA_DELTA, 0)
@@ -44,7 +48,7 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         ids.forEach { WidgetRenderer.render(context, manager, it) }
         WeatherWorker.schedulePeriodic(context)
-        if (WeatherStore(context).loadForecast() == null) WeatherWorker.refreshNow(context)
+        if (WeatherStore(context).loadForecast() == null) WeatherWorker.refreshNow(context, replace = false)
     }
 
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) {
@@ -57,7 +61,7 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
 
     override fun onEnabled(context: Context) {
         WeatherWorker.schedulePeriodic(context)
-        WeatherWorker.refreshNow(context)
+        WeatherWorker.refreshNow(context, replace = false)
     }
 
     override fun onDisabled(context: Context) {
@@ -99,7 +103,7 @@ object WidgetRenderer {
     }
 
     fun forget(context: Context, id: Int) {
-        state(context).edit().remove(offsetKey(id)).remove(backKey(id)).apply()
+        state(context).edit().remove(offsetKey(id)).remove(versionKey(id)).apply()
     }
 
     /** ウィジェット全体を作って渡す。 */
@@ -109,13 +113,16 @@ object WidgetRenderer {
         val m = metrics(context, manager, id, store, forecast)
         val rv = RemoteViews(context.packageName, R.layout.widget)
         rv.setOnClickPendingIntent(R.id.root, yahooIntent(context))
+        state(context).edit().putLong(versionKey(id), appVersion(context)).apply()
         rv.setTextViewText(R.id.place, store.place.name)
         rv.setTextViewTextSize(R.id.place, TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.15f)
 
-        if (forecast == null || forecast.days.isEmpty()) {
+        // ホーム画面は前に作った部品に上書きで当てはめるので、出す・隠すは毎回両方を指定する
+        val ready = forecast != null && forecast.days.isNotEmpty()
+        rv.setViewVisibility(R.id.days_frame, if (ready) View.VISIBLE else View.GONE)
+        rv.setViewVisibility(R.id.message, if (ready) View.GONE else View.VISIBLE)
+        if (forecast == null || !ready) {
             val error = store.lastError
-            rv.setViewVisibility(R.id.days_frame, View.GONE)
-            rv.setViewVisibility(R.id.message, View.VISIBLE)
             rv.setTextViewText(R.id.message, if (error == null) "読み込み中…" else "更新できませんでした\n$error")
             rv.setTextViewTextSize(R.id.message, TypedValue.COMPLEX_UNIT_DIP, m.unit * 0.8f)
             manager.updateAppWidget(id, rv)
@@ -124,25 +131,16 @@ object WidgetRenderer {
 
         val state = state(context)
         val window = DayWindow(forecast.days, forecast.today(), store.days, state.getInt(offsetKey(id), 0))
-        val back = state.getBoolean(backKey(id), false)
-        // 送るときの差分（shift）は、この並びの中で同じ種類の指示を置き換える形でまとめられる。
-        // 見せる ViewFlipper の切り替えを先に置いておく
-        rv.setViewVisibility(R.id.flipper_fwd, if (back) View.GONE else View.VISIBLE)
-        rv.setViewVisibility(R.id.flipper_back, if (back) View.VISIBLE else View.GONE)
-        // 両方の ViewFlipper に同じページを入れ、今の位置にそろえておく。
-        // Android 12 以降は番号付き（stable）で入れ、描き直しでもページを作り直さずに使い回させる
-        // （作り直すと前のページが消えて、送るときのアニメーションが出ない）。
-        // 番号付きで使い回させるには、先に removeAllViews を置く決まり
-        for (flipper in listOf(R.id.flipper_fwd, R.id.flipper_back)) {
-            rv.removeAllViews(flipper)
-            window.pages.forEachIndexed { i, page -> rv.addChild(flipper, pageView(context, page, forecast.today(), m), i) }
-            rv.setDisplayedChild(flipper, window.start)
-        }
+        // ページを全部入れて今の位置にそろえる。Android 12 以降は番号付き（stable）で入れ、
+        // 描き直しでもページを作り直さずに使い回させる（番号付きで使い回させるには、先に removeAllViews を置く決まり）
+        rv.removeAllViews(R.id.flipper)
+        window.pages.forEachIndexed { i, page -> rv.addChild(R.id.flipper, pageView(context, page, forecast.today(), m), i) }
+        rv.setDisplayedChild(R.id.flipper, window.start)
         setupZones(context, rv, id, window, m, withIntents = true)
         manager.updateAppWidget(id, rv)
     }
 
-    /** 1日送る。ページはもう渡してあるので、見せるページと押す場所だけを送る。 */
+    /** 1日送る。ページはもう渡してあるので、見せるページと押す場所だけを送る（アニメーションはなし。最速で切り替える）。 */
     fun shift(context: Context, id: Int, delta: Int) {
         val store = WeatherStore(context)
         val forecast = store.loadForecast() ?: return
@@ -152,17 +150,15 @@ object WidgetRenderer {
         val offset = window.shifted(delta)
         val next = DayWindow(forecast.days, forecast.today(), store.days, offset)
         if (next.start == window.start) return
-        val back = delta < 0
-        state.edit().putInt(offsetKey(id), offset).putBoolean(backKey(id), back).apply()
+        state.edit().putInt(offsetKey(id), offset).apply()
+        // ホーム画面にある部品が前の版のものなら、差分は効かないので全体を渡し直す
+        if (state.getLong(versionKey(id), -1) != appVersion(context)) {
+            render(context, manager, id)
+            return
+        }
 
-        val shown = if (back) R.id.flipper_back else R.id.flipper_fwd
-        val hidden = if (back) R.id.flipper_fwd else R.id.flipper_back
         val rv = RemoteViews(context.packageName, R.layout.widget)
-        // 隠れている方は黙って合わせ、見せる方でアニメーションさせる
-        rv.setViewVisibility(hidden, View.GONE)
-        rv.setDisplayedChild(hidden, next.start)
-        rv.setViewVisibility(shown, View.VISIBLE)
-        rv.setDisplayedChild(shown, next.start)
+        rv.setDisplayedChild(R.id.flipper, next.start)
         setupZones(context, rv, id, next, metrics(context, manager, id, store, forecast), withIntents = false)
         manager.partiallyUpdateAppWidget(id, rv)
     }
@@ -235,7 +231,7 @@ object WidgetRenderer {
 
     private fun dayView(context: Context, day: DayForecast, isToday: Boolean, m: Metrics): RemoteViews {
         val rv = RemoteViews(context.packageName, R.layout.widget_day)
-        if (isToday) rv.setInt(R.id.day, "setBackgroundResource", R.drawable.today_bg)
+        rv.setInt(R.id.day, "setBackgroundResource", if (isToday) R.drawable.today_bg else 0)
 
         val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
         val dateText = SpannableStringBuilder(date?.let { "${it.monthValue}/${it.dayOfMonth}" } ?: day.date)
@@ -255,15 +251,13 @@ object WidgetRenderer {
         rv.setImageViewResource(R.id.icon_main, icons?.main?.icon ?: R.drawable.wx_dash)
         rv.sizeImage(R.id.icon_main, iconPx)
         val sub = icons?.sub
+        rv.setViewVisibility(R.id.icon_sub, if (sub != null) View.VISIBLE else View.GONE)
+        // 「後」は矢印でつなぎ、「時々」「一時」は並べるだけ
+        rv.setViewVisibility(R.id.icon_arrow, if (sub != null && icons.later) View.VISIBLE else View.GONE)
         if (sub != null) {
-            rv.setViewVisibility(R.id.icon_sub, View.VISIBLE)
             rv.setImageViewResource(R.id.icon_sub, sub.icon)
             rv.sizeImage(R.id.icon_sub, iconPx)
-            // 「後」は矢印でつなぎ、「時々」「一時」は並べるだけ
-            if (icons.later) {
-                rv.setViewVisibility(R.id.icon_arrow, View.VISIBLE)
-                rv.sizeImage(R.id.icon_arrow, m.px(0.6f))
-            }
+            rv.sizeImage(R.id.icon_arrow, m.px(0.6f))
         }
 
         val temps = SpannableStringBuilder()
@@ -329,8 +323,13 @@ object WidgetRenderer {
     private fun state(context: Context) =
         context.applicationContext.getSharedPreferences("widget_state", Context.MODE_PRIVATE)
 
+    private fun appVersion(context: Context): Long =
+        context.packageManager.getPackageInfo(context.packageName, 0).let {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) it.longVersionCode else @Suppress("DEPRECATION") it.versionCode.toLong()
+        }
+
+    private fun versionKey(id: Int) = "version_$id"
     private fun offsetKey(id: Int) = "offset_$id"
-    private fun backKey(id: Int) = "back_$id"
 }
 
 /**

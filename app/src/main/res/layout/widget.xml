@@ -50,22 +50,12 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1">
 
-                    <!-- 先へ送るとき（右から入る） -->
                     <ViewFlipper
-                        android:id="@+id/flipper_fwd"
+                        android:id="@+id/flipper"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inAnimation="@anim/in_from_right"
-                        android:outAnimation="@anim/out_to_left" />
-
-                    <!-- 過去へ送るとき（左から入る） -->
-                    <ViewFlipper
-                        android:id="@+id/flipper_back"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inAnimation="@anim/in_from_left"
-                        android:outAnimation="@anim/out_to_right"
-                        android:visibility="gone" />
+                        android:inAnimation="@null"
+                        android:outAnimation="@null" />
                 </FrameLayout>
 
                 <FrameLayout
