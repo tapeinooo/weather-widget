@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">天気ウィジェット</string>
+    <string name="widget_name">天気予報</string>
+    <string name="widget_description">今の天気と週間予報</string>
+</resources>

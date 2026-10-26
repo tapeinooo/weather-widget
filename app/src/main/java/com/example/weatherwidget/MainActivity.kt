@@ -1,0 +1,176 @@
+package com.example.weatherwidget
+
+import android.Manifest
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        WeatherWorker.schedulePeriodic(this)
+        setContent {
+            val context = LocalContext.current
+            val dark = isSystemInDarkTheme()
+            val colors = when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                    if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+                dark -> darkColorScheme()
+                else -> lightColorScheme()
+            }
+            MaterialTheme(colorScheme = colors) {
+                Surface(Modifier.fillMaxSize()) { SettingsScreen() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsScreen() {
+    val context = LocalContext.current
+    val store = remember { WeatherStore(context) }
+    val scope = rememberCoroutineScope()
+
+    var place by remember { mutableStateOf(store.place) }
+    var weather by remember { mutableStateOf(store.loadWeather()) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<Place>>(emptyList()) }
+
+    val workInfos by remember {
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(WeatherWorker.NOW)
+    }.collectAsState(initial = emptyList())
+    val refreshing = workInfos.any { !it.state.isFinished }
+    LaunchedEffect(refreshing) {
+        if (!refreshing) {
+            weather = store.loadWeather()
+            if (workInfos.any { it.state == WorkInfo.State.FAILED }) message = "更新に失敗しました"
+        }
+    }
+
+    fun choose(p: Place) {
+        store.setPlace(p)
+        place = p
+        weather = null
+        results = emptyList()
+        query = ""
+        message = null
+        WeatherWorker.refreshNow(context)
+    }
+
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) {
+            message = "位置情報の許可がないため、現在地を使えません"
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            message = "現在地を調べています…"
+            val p = Locator.currentPlace(context)
+            if (p != null) choose(p) else message = "現在地を取得できませんでした（位置情報がオフかもしれません）"
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("天気ウィジェット", style = MaterialTheme.typography.headlineSmall)
+
+        Text("場所：${place.name}", style = MaterialTheme.typography.titleMedium)
+        val w = weather
+        Text(
+            when {
+                refreshing -> "更新しています…"
+                w == null -> "まだ予報がありません"
+                else -> "${WeatherCodes.emoji(w.code, w.isDay)} ${WeatherCodes.label(w.code)}　${w.temperature.toInt()}°"
+            },
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { permission.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }) {
+                Text("現在地にする")
+            }
+            OutlinedButton(onClick = { message = null; WeatherWorker.refreshNow(context) }) {
+                Text("今すぐ更新")
+            }
+        }
+
+        HorizontalDivider()
+        Text("地名で探す", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                placeholder = { Text("例：渋谷、札幌") },
+                modifier = Modifier.weight(1f),
+            )
+            Button(
+                enabled = query.isNotBlank(),
+                onClick = {
+                    scope.launch {
+                        results = runCatching { WeatherApi.searchPlaces(query.trim()) }
+                            .onFailure { message = "検索できませんでした" }
+                            .getOrDefault(emptyList())
+                        if (results.isEmpty() && message == null) message = "見つかりませんでした"
+                    }
+                },
+            ) { Text("検索") }
+        }
+        LazyColumn {
+            items(results) { p ->
+                Text(
+                    p.name,
+                    modifier = Modifier.fillMaxWidth().clickable { choose(p) }.padding(vertical = 12.dp),
+                )
+                HorizontalDivider()
+            }
+        }
+
+        Text(
+            "ホーム画面を長押し →「ウィジェット」→「天気ウィジェット」で置けます。1時間ごとに自動で更新します。",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
