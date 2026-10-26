@@ -86,14 +86,16 @@
                     android:layout_width="22dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@drawable/zone_bg"
                     android:visibility="gone">
 
                     <TextView
                         android:id="@+id/zone_left_wide_on_arrow"
                         android:layout_width="22dp"
-                        android:layout_height="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
                         android:layout_gravity="start|center_vertical"
+                        android:background="@drawable/arrow_bg"
                         android:duplicateParentState="true"
                         android:gravity="center"
                         android:text="‹"
@@ -110,7 +112,9 @@
                     <TextView
                         android:id="@+id/zone_left_wide_off_arrow"
                         android:layout_width="22dp"
-                        android:layout_height="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
                         android:layout_gravity="start|center_vertical"
                         android:gravity="center"
                         android:text="‹"
@@ -122,14 +126,16 @@
                     android:layout_width="22dp"
                     android:layout_height="match_parent"
                     android:layout_weight="0"
-                    android:background="@drawable/zone_bg"
                     android:visibility="gone">
 
                     <TextView
                         android:id="@+id/zone_left_narrow_on_arrow"
                         android:layout_width="22dp"
-                        android:layout_height="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
                         android:layout_gravity="start|center_vertical"
+                        android:background="@drawable/arrow_bg"
                         android:duplicateParentState="true"
                         android:gravity="center"
                         android:text="‹"
@@ -146,7 +152,9 @@
                     <TextView
                         android:id="@+id/zone_left_narrow_off_arrow"
                         android:layout_width="22dp"
-                        android:layout_height="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
                         android:layout_gravity="start|center_vertical"
                         android:gravity="center"
                         android:text="‹"
@@ -207,14 +215,16 @@
                     android:layout_width="22dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@drawable/zone_bg"
                     android:visibility="gone">
 
                     <TextView
                         android:id="@+id/zone_right_wide_on_arrow"
                         android:layout_width="22dp"
-                        android:layout_height="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
                         android:layout_gravity="end|center_vertical"
+                        android:background="@drawable/arrow_bg"
                         android:duplicateParentState="true"
                         android:gravity="center"
                         android:text="›"
@@ -231,7 +241,9 @@
                     <TextView
                         android:id="@+id/zone_right_wide_off_arrow"
                         android:layout_width="22dp"
-                        android:layout_height="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
                         android:layout_gravity="end|center_vertical"
                         android:gravity="center"
                         android:text="›"
@@ -243,14 +255,16 @@
                     android:layout_width="22dp"
                     android:layout_height="match_parent"
                     android:layout_weight="0"
-                    android:background="@drawable/zone_bg"
                     android:visibility="gone">
 
                     <TextView
                         android:id="@+id/zone_right_narrow_on_arrow"
                         android:layout_width="22dp"
-                        android:layout_height="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
                         android:layout_gravity="end|center_vertical"
+                        android:background="@drawable/arrow_bg"
                         android:duplicateParentState="true"
                         android:gravity="center"
                         android:text="›"
@@ -267,7 +281,9 @@
                     <TextView
                         android:id="@+id/zone_right_narrow_off_arrow"
                         android:layout_width="22dp"
-                        android:layout_height="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp"
                         android:layout_gravity="end|center_vertical"
                         android:gravity="center"
                         android:text="›"
