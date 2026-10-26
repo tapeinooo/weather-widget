@@ -33,6 +33,7 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
             WidgetRenderer.updateAll(context)
             return
         }
+        if (intent.action == ACTION_NOTHING) return
         if (intent.action == ACTION_SHIFT) {
             val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
             val delta = intent.getIntExtra(EXTRA_DELTA, 0)
@@ -70,14 +71,16 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
 
     companion object {
         const val ACTION_SHIFT = "com.example.weatherwidget.SHIFT"
+        const val ACTION_NOTHING = "com.example.weatherwidget.NOTHING"
         const val EXTRA_DELTA = "delta"
     }
 }
 
+private const val ARROW_WIDTH_DP = 22f
+private const val PADDING_DP = 8f
+
 object WidgetRenderer {
     private const val YAHOO_WEATHER = "jp.co.yahoo.android.weather.type1"
-    private const val ARROW_WIDTH_DP = 22f
-    private const val PADDING_DP = 8f
 
     private val WHITE = Color.parseColor("#EDEDED")
     private val GRAY = Color.parseColor("#BDBDBD")
@@ -120,6 +123,9 @@ object WidgetRenderer {
         // ホーム画面は前に作った部品に上書きで当てはめるので、出す・隠すは毎回両方を指定する
         val ready = forecast != null && forecast.days.isNotEmpty()
         rv.setViewVisibility(R.id.days_frame, if (ready) View.VISIBLE else View.GONE)
+        rv.setViewVisibility(R.id.zones, if (ready) View.VISIBLE else View.GONE)
+        // 日の並びは、地名の行の下で、左右に矢印の分をあけて、残りの高さの真ん中に置く
+        rv.setViewPadding(R.id.days_frame, m.dp(ARROW_WIDTH_DP), m.daysTop(), m.dp(ARROW_WIDTH_DP), m.dp(PADDING_DP))
         rv.setViewVisibility(R.id.message, if (ready) View.GONE else View.VISIBLE)
         if (forecast == null || !ready) {
             val error = store.lastError
@@ -163,58 +169,32 @@ object WidgetRenderer {
         manager.partiallyUpdateAppWidget(id, rv)
     }
 
-    private val MIDS = intArrayOf(
-        R.id.zone_mid_1, R.id.zone_mid_2, R.id.zone_mid_3, R.id.zone_mid_4,
-        R.id.zone_mid_5, R.id.zone_mid_6, R.id.zone_mid_7,
-    )
-
     /**
-     * 左右の押す場所。3日以上並べているときは、端の日の列も押す場所にする（wide）。
+     * 左右の押す場所。ウィジェットの高さいっぱいに、左右を幅の3割ずつ、真ん中を4割にとる。
      * 真ん中は何もしない場所で、押すと下の Yahoo!天気 が開く。
+     * 行き止まり（これ以上送れない側）は、押しても何も起きない（Yahoo!天気 も開かない）。
      * 押す場所はレイアウトに全部置いてあり、表示を切り替えるだけ（足したり消したりしない）。
      */
     private fun setupZones(context: Context, rv: RemoteViews, id: Int, window: DayWindow, m: Metrics, withIntents: Boolean) {
-        val wide = window.count >= 3
-        fun side(delta: Int, enabled: Boolean, wideOn: Int, wideOff: Int, narrowOn: Int, narrowOff: Int) {
-            val shown = when {
-                wide && enabled -> wideOn
-                wide -> wideOff
-                enabled -> narrowOn
-                else -> narrowOff
-            }
-            for (zone in intArrayOf(wideOn, wideOff, narrowOn, narrowOff)) {
-                rv.setViewVisibility(zone, if (zone == shown) View.VISIBLE else View.GONE)
-            }
+        fun side(delta: Int, enabled: Boolean, on: Int, off: Int, onArrow: Int, offArrow: Int) {
+            rv.setViewVisibility(on, if (enabled) View.VISIBLE else View.GONE)
+            rv.setViewVisibility(off, if (enabled) View.GONE else View.VISIBLE)
             if (!withIntents) return
-            for (zone in intArrayOf(wideOn, wideOff, narrowOn, narrowOff)) {
-                rv.setTextViewTextSize(arrowOf(zone), TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.8f)
-            }
-            val intent = Intent(context, WeatherWidgetReceiver::class.java)
+            for (zone in intArrayOf(on, off)) rv.setViewPadding(zone, 0, m.daysTop(), 0, m.dp(PADDING_DP))
+            rv.setTextViewTextSize(onArrow, TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.8f)
+            rv.setTextViewTextSize(offArrow, TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.8f)
+            val request = id * 4 + if (delta > 0) 1 else 0
+            val shift = Intent(context, WeatherWidgetReceiver::class.java)
                 .setAction(WeatherWidgetReceiver.ACTION_SHIFT)
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
                 .putExtra(WeatherWidgetReceiver.EXTRA_DELTA, delta)
-            val pending = PendingIntent.getBroadcast(
-                context, id * 2 + if (delta > 0) 1 else 0, intent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-            rv.setOnClickPendingIntent(wideOn, pending)
-            rv.setOnClickPendingIntent(narrowOn, pending)
+            val nothing = Intent(context, WeatherWidgetReceiver::class.java).setAction(WeatherWidgetReceiver.ACTION_NOTHING)
+            val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            rv.setOnClickPendingIntent(on, PendingIntent.getBroadcast(context, request, shift, flags))
+            rv.setOnClickPendingIntent(off, PendingIntent.getBroadcast(context, request + 2, nothing, flags))
         }
-        side(-1, window.canGoBack, R.id.zone_left_wide_on, R.id.zone_left_wide_off, R.id.zone_left_narrow_on, R.id.zone_left_narrow_off)
-        val mids = if (wide) window.count - 2 else window.count
-        MIDS.forEachIndexed { i, mid -> rv.setViewVisibility(mid, if (i < mids) View.VISIBLE else View.GONE) }
-        side(1, window.canGoForward, R.id.zone_right_wide_on, R.id.zone_right_wide_off, R.id.zone_right_narrow_on, R.id.zone_right_narrow_off)
-    }
-
-    private fun arrowOf(zone: Int): Int = when (zone) {
-        R.id.zone_left_wide_on -> R.id.zone_left_wide_on_arrow
-        R.id.zone_left_wide_off -> R.id.zone_left_wide_off_arrow
-        R.id.zone_left_narrow_on -> R.id.zone_left_narrow_on_arrow
-        R.id.zone_left_narrow_off -> R.id.zone_left_narrow_off_arrow
-        R.id.zone_right_wide_on -> R.id.zone_right_wide_on_arrow
-        R.id.zone_right_wide_off -> R.id.zone_right_wide_off_arrow
-        R.id.zone_right_narrow_on -> R.id.zone_right_narrow_on_arrow
-        else -> R.id.zone_right_narrow_off_arrow
+        side(-1, window.canGoBack, R.id.zone_left_on, R.id.zone_left_off, R.id.zone_left_on_arrow, R.id.zone_left_off_arrow)
+        side(1, window.canGoForward, R.id.zone_right_on, R.id.zone_right_off, R.id.zone_right_on_arrow, R.id.zone_right_off_arrow)
     }
 
     /** Android 12 以降は番号付きで入れる（描き直しで使い回される）。 */
@@ -300,8 +280,14 @@ object WidgetRenderer {
      * 1列の幅に「20℃ / 10℃」が収まり、縦に全部の行が収まる大きさを基本にし、設定の％を掛ける。
      * 大きさは dp で指定するので、端末の文字サイズ設定には左右されない。
      */
-    class Metrics(val unit: Float, private val density: Float) {
+    class Metrics(val unit: Float, val density: Float) {
         fun px(factor: Float): Int = (unit * factor * density).toInt().coerceAtLeast(1)
+
+        /** dp を画素にする。 */
+        fun dp(dp: Float): Int = (dp * density).toInt()
+
+        /** 日の並びの上の余白（地名の行の分）。矢印も日の並びの高さの真ん中にそろえる。 */
+        fun daysTop(): Int = dp(PADDING_DP) + px(1.15f * 1.4f + 0.3f)
     }
 
     private fun metrics(context: Context, manager: AppWidgetManager, id: Int, store: WeatherStore, forecast: Forecast?): Metrics {

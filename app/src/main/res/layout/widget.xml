@@ -5,281 +5,138 @@
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg">
 
+    <!-- 日の並び。上は地名の分、左右は矢印の分をあける（大きさは実行時に決める） -->
+    <FrameLayout
+        android:id="@+id/days_frame"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <ViewFlipper
+            android:id="@+id/flipper"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:inAnimation="@null"
+            android:outAnimation="@null" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/place"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:paddingTop="8dp"
+        android:singleLine="true"
+        android:textColor="#FFEDEDED" />
+
+    <TextView
+        android:id="@+id/message"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:maxLines="4"
+        android:textColor="#FFBDBDBD"
+        android:visibility="gone" />
+
+    <!-- 押す場所。ウィジェットの高さいっぱいに、左右を広く、真ん中を狭くとる。
+         押せる／行き止まりの切り替えは表示の切り替えだけで行う（足したり消したりしない） -->
     <LinearLayout
+        android:id="@+id/zones"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:gravity="center_vertical"
-        android:orientation="vertical"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp">
+        android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/place"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:gravity="center"
-            android:singleLine="true"
-            android:textColor="#FFEDEDED" />
-
-        <TextView
-            android:id="@+id/message"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:maxLines="4"
-            android:textColor="#FFBDBDBD"
-            android:visibility="gone" />
-
+        <!-- 押せるときの左の場所 -->
         <FrameLayout
-            android:id="@+id/days_frame"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:id="@+id/zone_left_on"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3"
+            android:visibility="gone">
 
-            <LinearLayout
-                android:layout_width="match_parent"
+            <TextView
+                android:id="@+id/zone_left_on_arrow"
+                android:layout_width="22dp"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:layout_gravity="start|center_vertical"
+                android:gravity="center"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+            android:background="@drawable/arrow_bg"
+            android:duplicateParentState="true"
+                android:text="‹"
+                android:textColor="@color/arrow_text" />
+        </FrameLayout>
 
-                <FrameLayout
-                    android:layout_width="22dp"
-                    android:layout_height="1dp" />
+        <!-- 行き止まり（押しても何も起きない）ときの左の場所 -->
+        <FrameLayout
+            android:id="@+id/zone_left_off"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3"
+            android:visibility="gone">
 
-                <FrameLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1">
+            <TextView
+                android:id="@+id/zone_left_off_arrow"
+                android:layout_width="22dp"
+                android:layout_height="wrap_content"
+                android:layout_gravity="start|center_vertical"
+                android:gravity="center"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+                android:text="‹"
+                android:textColor="#40EDEDED" />
+        </FrameLayout>
 
-                    <ViewFlipper
-                        android:id="@+id/flipper"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inAnimation="@null"
-                        android:outAnimation="@null" />
-                </FrameLayout>
+        <!-- 真ん中は何もしない場所。押すと下の Yahoo!天気 が開く -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="4" />
 
-                <FrameLayout
-                    android:layout_width="22dp"
-                    android:layout_height="1dp" />
-            </LinearLayout>
+        <!-- 押せるときの右の場所 -->
+        <FrameLayout
+            android:id="@+id/zone_right_on"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3"
+            android:visibility="gone">
 
-            <!-- 押す場所（左右の端の日と矢印）。日の列と同じ幅に分ける -->
-            <!-- 押せるとき（_on）と押せないとき（_off）、端の日も含めるとき（wide）と矢印だけ（narrow）を、表示の切り替えで使い分ける -->
-            <LinearLayout
-                android:id="@+id/zones"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="horizontal">
+            <TextView
+                android:id="@+id/zone_right_on_arrow"
+                android:layout_width="22dp"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end|center_vertical"
+                android:gravity="center"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+            android:background="@drawable/arrow_bg"
+            android:duplicateParentState="true"
+                android:text="›"
+                android:textColor="@color/arrow_text" />
+        </FrameLayout>
 
-                <FrameLayout
-                    android:id="@+id/zone_left_wide_on"
-                    android:layout_width="22dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone">
+        <!-- 行き止まり（押しても何も起きない）ときの右の場所 -->
+        <FrameLayout
+            android:id="@+id/zone_right_off"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3"
+            android:visibility="gone">
 
-                    <TextView
-                        android:id="@+id/zone_left_wide_on_arrow"
-                        android:layout_width="22dp"
-                        android:layout_height="wrap_content"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp"
-                        android:layout_gravity="start|center_vertical"
-                        android:background="@drawable/arrow_bg"
-                        android:duplicateParentState="true"
-                        android:gravity="center"
-                        android:text="‹"
-                        android:textColor="@color/arrow_text" />
-                </FrameLayout>
-
-                <FrameLayout
-                    android:id="@+id/zone_left_wide_off"
-                    android:layout_width="22dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:id="@+id/zone_left_wide_off_arrow"
-                        android:layout_width="22dp"
-                        android:layout_height="wrap_content"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp"
-                        android:layout_gravity="start|center_vertical"
-                        android:gravity="center"
-                        android:text="‹"
-                        android:textColor="#40EDEDED" />
-                </FrameLayout>
-
-                <FrameLayout
-                    android:id="@+id/zone_left_narrow_on"
-                    android:layout_width="22dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="0"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:id="@+id/zone_left_narrow_on_arrow"
-                        android:layout_width="22dp"
-                        android:layout_height="wrap_content"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp"
-                        android:layout_gravity="start|center_vertical"
-                        android:background="@drawable/arrow_bg"
-                        android:duplicateParentState="true"
-                        android:gravity="center"
-                        android:text="‹"
-                        android:textColor="@color/arrow_text" />
-                </FrameLayout>
-
-                <FrameLayout
-                    android:id="@+id/zone_left_narrow_off"
-                    android:layout_width="22dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="0"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:id="@+id/zone_left_narrow_off_arrow"
-                        android:layout_width="22dp"
-                        android:layout_height="wrap_content"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp"
-                        android:layout_gravity="start|center_vertical"
-                        android:gravity="center"
-                        android:text="‹"
-                        android:textColor="#40EDEDED" />
-                </FrameLayout>
-
-                <FrameLayout
-                    android:id="@+id/zone_mid_1"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone" />
-
-                <FrameLayout
-                    android:id="@+id/zone_mid_2"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone" />
-
-                <FrameLayout
-                    android:id="@+id/zone_mid_3"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone" />
-
-                <FrameLayout
-                    android:id="@+id/zone_mid_4"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone" />
-
-                <FrameLayout
-                    android:id="@+id/zone_mid_5"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone" />
-
-                <FrameLayout
-                    android:id="@+id/zone_mid_6"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone" />
-
-                <FrameLayout
-                    android:id="@+id/zone_mid_7"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone" />
-
-                <FrameLayout
-                    android:id="@+id/zone_right_wide_on"
-                    android:layout_width="22dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:id="@+id/zone_right_wide_on_arrow"
-                        android:layout_width="22dp"
-                        android:layout_height="wrap_content"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp"
-                        android:layout_gravity="end|center_vertical"
-                        android:background="@drawable/arrow_bg"
-                        android:duplicateParentState="true"
-                        android:gravity="center"
-                        android:text="›"
-                        android:textColor="@color/arrow_text" />
-                </FrameLayout>
-
-                <FrameLayout
-                    android:id="@+id/zone_right_wide_off"
-                    android:layout_width="22dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:id="@+id/zone_right_wide_off_arrow"
-                        android:layout_width="22dp"
-                        android:layout_height="wrap_content"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp"
-                        android:layout_gravity="end|center_vertical"
-                        android:gravity="center"
-                        android:text="›"
-                        android:textColor="#40EDEDED" />
-                </FrameLayout>
-
-                <FrameLayout
-                    android:id="@+id/zone_right_narrow_on"
-                    android:layout_width="22dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="0"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:id="@+id/zone_right_narrow_on_arrow"
-                        android:layout_width="22dp"
-                        android:layout_height="wrap_content"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp"
-                        android:layout_gravity="end|center_vertical"
-                        android:background="@drawable/arrow_bg"
-                        android:duplicateParentState="true"
-                        android:gravity="center"
-                        android:text="›"
-                        android:textColor="@color/arrow_text" />
-                </FrameLayout>
-
-                <FrameLayout
-                    android:id="@+id/zone_right_narrow_off"
-                    android:layout_width="22dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="0"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:id="@+id/zone_right_narrow_off_arrow"
-                        android:layout_width="22dp"
-                        android:layout_height="wrap_content"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="10dp"
-                        android:layout_gravity="end|center_vertical"
-                        android:gravity="center"
-                        android:text="›"
-                        android:textColor="#40EDEDED" />
-                </FrameLayout>
-            </LinearLayout>
+            <TextView
+                android:id="@+id/zone_right_off_arrow"
+                android:layout_width="22dp"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end|center_vertical"
+                android:gravity="center"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+                android:text="›"
+                android:textColor="#40EDEDED" />
         </FrameLayout>
     </LinearLayout>
 </FrameLayout>
