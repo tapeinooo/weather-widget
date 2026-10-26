@@ -45,6 +45,11 @@ class WeatherStore(context: Context) {
             .apply()
     }
 
+    /** 最後の更新が失敗したときの理由。成功したら消す。 */
+    var lastError: String?
+        get() = prefs.getString(KEY_ERROR, null)
+        set(value) = prefs.edit().putString(KEY_ERROR, value).apply()
+
     fun loadForecast(): Forecast? = forecastJson?.let { Forecast.fromJson(it) }
 
     /** 気象庁の予報区域。まだ調べていなければ checked が false。日本の外なら area が null。 */
@@ -64,6 +69,7 @@ class WeatherStore(context: Context) {
         const val MAX_SCALE = 200
         private const val KEY_DAYS = "days"
         private const val KEY_JMA_AREA = "jmaArea"
+        private const val KEY_ERROR = "lastError"
         private const val KEY_TEXT_SCALE = "textScale"
         private const val KEY_NAME = "name"
         private const val KEY_LAT = "lat"

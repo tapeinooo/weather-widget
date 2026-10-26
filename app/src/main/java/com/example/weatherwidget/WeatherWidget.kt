@@ -66,7 +66,8 @@ class WeatherWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         // 新しく置いたウィジェットには、アプリが持っている最新の予報と設定を渡す
         copyStoreToState(context, id)
-        if (WeatherStore(context).forecastJson == null) WeatherWorker.refreshNow(context)
+        // 読める予報がなければ（古い版の形のままのときも）取り直す
+        if (WeatherStore(context).loadForecast() == null) WeatherWorker.refreshNow(context)
         provideContent { WidgetContent() }
     }
 
@@ -77,6 +78,7 @@ class WeatherWidget : GlanceAppWidget() {
         val KEY_DAYS = intPreferencesKey("days")
         val KEY_TEXT_SCALE = intPreferencesKey("textScale")
         val KEY_OFFSET = intPreferencesKey("offset")
+        val KEY_ERROR = stringPreferencesKey("error")
 
         private suspend fun copyStoreToState(context: Context, id: GlanceId) {
             val store = WeatherStore(context)
@@ -86,6 +88,8 @@ class WeatherWidget : GlanceAppWidget() {
                     this[KEY_FETCHED_AT] = store.fetchedAt
                     this[KEY_DAYS] = store.days
                     this[KEY_TEXT_SCALE] = store.textScale
+                    val error = store.lastError
+                    if (error != null) this[KEY_ERROR] = error else remove(KEY_ERROR)
                     val json = store.forecastJson
                     if (json != null) this[KEY_JSON] = json else remove(KEY_JSON)
                 }
@@ -197,7 +201,14 @@ private fun WidgetContent() {
         )
         Spacer(GlanceModifier.height(m.dp(0.3f)))
         if (days.isEmpty()) {
-            Text("読み込み中…", style = TextStyle(color = GRAY, fontSize = m.text(1f)))
+            val error = prefs[WeatherWidget.KEY_ERROR]
+            Text(
+                if (error == null) "読み込み中…" else "更新できませんでした",
+                style = TextStyle(color = GRAY, fontSize = m.text(1f)),
+            )
+            if (error != null) {
+                Text(error, maxLines = 3, style = TextStyle(color = DIM, fontSize = m.text(0.7f), textAlign = TextAlign.Center))
+            }
             return@Column
         }
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

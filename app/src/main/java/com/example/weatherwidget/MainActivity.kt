@@ -83,7 +83,7 @@ private fun SettingsScreen() {
 
     var place by remember { mutableStateOf(store.place) }
     var forecast by remember { mutableStateOf(store.loadForecast()) }
-    var message by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<String?>(store.lastError?.let { "前回の更新に失敗しました：$it" }) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
     var days by remember { mutableStateOf(store.days) }
@@ -102,7 +102,7 @@ private fun SettingsScreen() {
     LaunchedEffect(refreshing) {
         if (!refreshing) {
             forecast = store.loadForecast()
-            if (workInfos.any { it.state == WorkInfo.State.FAILED }) message = "更新に失敗しました"
+            store.lastError?.let { message = "更新に失敗しました：$it" }
         }
     }
 
