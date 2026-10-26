@@ -1,380 +1,355 @@
 package com.example.weatherwidget
 
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.glance.GlanceId
-import androidx.glance.GlanceModifier
-import androidx.glance.Image
-import androidx.glance.ImageProvider
-import androidx.glance.LocalContext
-import androidx.glance.LocalSize
-import androidx.glance.action.ActionParameters
-import androidx.glance.action.actionParametersOf
-import androidx.glance.action.actionStartActivity
-import androidx.glance.appwidget.action.actionStartActivity
-import androidx.glance.action.clickable
-import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import androidx.glance.appwidget.SizeMode
-import androidx.glance.appwidget.action.ActionCallback
-import androidx.glance.appwidget.action.actionRunCallback
-import androidx.glance.appwidget.cornerRadius
-import androidx.glance.appwidget.provideContent
-import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.background
-import androidx.glance.currentState
-import androidx.glance.layout.Alignment
-import androidx.glance.layout.Box
-import androidx.glance.layout.Column
-import androidx.glance.layout.Row
-import androidx.glance.layout.Spacer
-import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.fillMaxWidth
-import androidx.glance.layout.height
-import androidx.glance.layout.padding
-import androidx.glance.layout.size
-import androidx.glance.layout.width
-import androidx.glance.state.GlanceStateDefinition
-import androidx.glance.state.PreferencesGlanceStateDefinition
-import androidx.glance.text.FontWeight
-import androidx.glance.text.Text
-import androidx.glance.text.TextAlign
-import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
+import android.graphics.Color
+import android.os.Build
+import android.os.Bundle
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.util.TypedValue
+import android.view.View
+import android.widget.RemoteViews
 import java.time.LocalDate
+import java.time.format.TextStyle
 import java.util.Locale
-import java.time.format.TextStyle as DateTextStyle
 
-class WeatherWidget : GlanceAppWidget() {
+/**
+ * ホーム画面のウィジェット。
+ * 送りを速くするため、表示できる範囲（ページ）を全部 ViewFlipper に入れて渡しておき、
+ * 押されたら「何枚目を見せるか」だけを送る（partiallyUpdateAppWidget）。
+ * 先へ送るときと過去へ送るときでアニメーションの向きが違うので、ViewFlipper を2つ持ち、見せる方を切り替える。
+ */
+class WeatherWidgetReceiver : AppWidgetProvider() {
 
-    // 文字の大きさを実際の幅・高さから決めるので、大きさはそのまま受け取る
-    override val sizeMode = SizeMode.Exact
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == ACTION_SHIFT) {
+            val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+            val delta = intent.getIntExtra(EXTRA_DELTA, 0)
+            if (id != AppWidgetManager.INVALID_APPWIDGET_ID && delta != 0) {
+                WidgetRenderer.shift(context, id, delta)
+                OffsetReset.arm(context)
+            }
+            return
+        }
+        super.onReceive(context, intent)
+    }
 
-    override val stateDefinition: GlanceStateDefinition<*> = PreferencesGlanceStateDefinition
-
-    override suspend fun provideGlance(context: Context, id: GlanceId) {
-        // 新しく置いたウィジェットには、アプリが持っている最新の予報と設定を渡す
-        copyStoreToState(context, id)
-        // 読める予報がなければ（古い版の形のままのときも）取り直す
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        ids.forEach { WidgetRenderer.render(context, manager, it) }
+        WeatherWorker.schedulePeriodic(context)
         if (WeatherStore(context).loadForecast() == null) WeatherWorker.refreshNow(context)
-        provideContent { WidgetContent() }
     }
 
-    companion object {
-        val KEY_JSON = stringPreferencesKey("json")
-        val KEY_PLACE = stringPreferencesKey("place")
-        val KEY_FETCHED_AT = longPreferencesKey("fetchedAt")
-        val KEY_DAYS = intPreferencesKey("days")
-        val KEY_TEXT_SCALE = intPreferencesKey("textScale")
-        val KEY_OFFSET = intPreferencesKey("offset")
-        val KEY_ERROR = stringPreferencesKey("error")
-
-        private suspend fun copyStoreToState(context: Context, id: GlanceId) {
-            val store = WeatherStore(context)
-            updateAppWidgetState(context, PreferencesGlanceStateDefinition, id) { prefs ->
-                prefs.toMutablePreferences().apply {
-                    this[KEY_PLACE] = store.place.name
-                    this[KEY_FETCHED_AT] = store.fetchedAt
-                    this[KEY_DAYS] = store.days
-                    this[KEY_TEXT_SCALE] = store.textScale
-                    val error = store.lastError
-                    if (error != null) this[KEY_ERROR] = error else remove(KEY_ERROR)
-                    val json = store.forecastJson
-                    if (json != null) this[KEY_JSON] = json else remove(KEY_JSON)
-                }
-            }
-        }
-
-        /** 送った位置を元（今日が左端）に戻す。送っていたウィジェットだけ描き直す。 */
-        suspend fun resetOffsets(context: Context) {
-            val widget = WeatherWidget()
-            GlanceAppWidgetManager(context).getGlanceIds(WeatherWidget::class.java).forEach { id ->
-                var changed = false
-                updateAppWidgetState(context, PreferencesGlanceStateDefinition, id) { prefs ->
-                    changed = (prefs[KEY_OFFSET] ?: 0) != 0
-                    prefs.toMutablePreferences().apply { remove(KEY_OFFSET) }
-                }
-                if (changed) widget.update(context, id)
-            }
-        }
-
-        /** 置かれているすべてのウィジェットに最新の予報と設定を渡して描き直す。 */
-        suspend fun pushToAll(context: Context) {
-            val widget = WeatherWidget()
-            GlanceAppWidgetManager(context).getGlanceIds(WeatherWidget::class.java).forEach { id ->
-                copyStoreToState(context, id)
-                widget.update(context, id)
-            }
-        }
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) {
+        WidgetRenderer.render(context, manager, id)
     }
-}
 
-class WeatherWidgetReceiver : GlanceAppWidgetReceiver() {
-    override val glanceAppWidget: GlanceAppWidget = WeatherWidget()
+    override fun onDeleted(context: Context, ids: IntArray) {
+        ids.forEach { WidgetRenderer.forget(context, it) }
+    }
 
     override fun onEnabled(context: Context) {
-        super.onEnabled(context)
         WeatherWorker.schedulePeriodic(context)
         WeatherWorker.refreshNow(context)
     }
 
     override fun onDisabled(context: Context) {
-        super.onDisabled(context)
         WeatherWorker.cancelPeriodic(context)
-    }
-}
-
-private val BACKGROUND = Color(0xE6202124)
-private val WHITE = ColorProvider(Color(0xFFEDEDED))
-private val GRAY = ColorProvider(Color(0xFFBDBDBD))
-private val RED = ColorProvider(Color(0xFFF2635B))
-private val BLUE = ColorProvider(Color(0xFF5B95F2))
-private val DIM = ColorProvider(Color(0x55EDEDED))
-private val TODAY_BACKGROUND = Color(0x33FFFFFF)
-
-/**
- * 文字の大きさの決め方。1 単位＝日付の文字の大きさ（dp）。
- * 1列の幅に「20℃ / 10℃」が収まり、縦に全部の行が収まる大きさを基本にし、設定の％を掛ける。
- * 端末の文字サイズ設定（fontScale）で割り戻して、設定に左右されないようにする。
- */
-private class Metrics(width: Dp, height: Dp, columns: Int, scalePercent: Int, private val fontScale: Float) {
-    val padding = 8.dp
-    val unit: Float = run {
-        val columnWidth = (width.value - padding.value * 2) / columns.coerceAtLeast(1)
-        val byWidth = columnWidth / 5.6f
-        val byHeight = (height.value - padding.value * 2) / 7.4f
-        minOf(byWidth, byHeight).coerceIn(6f, 48f) * scalePercent / 100f
-    }
-
-    fun text(factor: Float): TextUnit = (unit * factor / fontScale).sp
-    fun dp(factor: Float): Dp = (unit * factor).dp
-}
-
-/** 送りボタンの幅。 */
-private val ARROW_WIDTH = 22.dp
-
-@Composable
-private fun WidgetContent() {
-    val prefs = currentState<Preferences>()
-    val forecast = prefs[WeatherWidget.KEY_JSON]?.let { Forecast.fromJson(it) }
-    val place = prefs[WeatherWidget.KEY_PLACE] ?: WeatherStore.DEFAULT.name
-    val all = forecast?.days.orEmpty()
-    val today = forecast?.today().orEmpty()
-    val window = DayWindow(all, today, prefs[WeatherWidget.KEY_DAYS] ?: WeatherStore.DEFAULT_DAYS, prefs[WeatherWidget.KEY_OFFSET] ?: 0)
-    val days = window.visible
-    val size = LocalSize.current
-    val context = LocalContext.current
-    val m = Metrics(
-        width = size.width - ARROW_WIDTH * 2,
-        height = size.height,
-        columns = days.size.coerceAtLeast(1),
-        scalePercent = prefs[WeatherWidget.KEY_TEXT_SCALE] ?: 100,
-        fontScale = context.resources.configuration.fontScale,
-    )
-
-    Column(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .cornerRadius(20.dp)
-            .background(BACKGROUND)
-            .padding(vertical = m.padding)
-            .clickable(tapAction(context)),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            place,
-            maxLines = 1,
-            style = TextStyle(color = WHITE, fontSize = m.text(1.15f), textAlign = TextAlign.Center),
-            modifier = GlanceModifier.fillMaxWidth(),
-        )
-        Spacer(GlanceModifier.height(m.dp(0.3f)))
-        if (days.isEmpty()) {
-            val error = prefs[WeatherWidget.KEY_ERROR]
-            Text(
-                if (error == null) "読み込み中…" else "更新できませんでした",
-                style = TextStyle(color = GRAY, fontSize = m.text(1f)),
-            )
-            if (error != null) {
-                Text(error, maxLines = 3, style = TextStyle(color = DIM, fontSize = m.text(0.7f), textAlign = TextAlign.Center))
-            }
-            return@Column
-        }
-        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            ShiftButton("‹", -1, window.canGoBack, m)
-            Row(modifier = GlanceModifier.defaultWeight()) {
-                days.forEach { day ->
-                    val isToday = day.date == today
-                    Box(
-                        modifier = GlanceModifier.defaultWeight().padding(horizontal = 1.dp),
-                        contentAlignment = Alignment.TopCenter,
-                    ) {
-                        Box(
-                            modifier = (if (isToday) GlanceModifier.background(TODAY_BACKGROUND).cornerRadius(10.dp) else GlanceModifier)
-                                .fillMaxWidth()
-                                .padding(vertical = m.dp(0.2f)),
-                            contentAlignment = Alignment.TopCenter,
-                        ) {
-                            DayColumn(day, m)
-                        }
-                    }
-                }
-            }
-            ShiftButton("›", 1, window.canGoForward, m)
-        }
-    }
-}
-
-/** 左右の送りボタン。送れないときは薄くして押せないようにする。 */
-@Composable
-private fun ShiftButton(label: String, delta: Int, enabled: Boolean, m: Metrics) {
-    val modifier = GlanceModifier.width(ARROW_WIDTH).height(m.dp(5.6f))
-    Box(
-        modifier = if (enabled) {
-            modifier.clickable(actionRunCallback<ShiftAction>(actionParametersOf(ShiftAction.DELTA to delta)))
-        } else {
-            modifier
-        },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, style = TextStyle(color = if (enabled) WHITE else DIM, fontSize = m.text(1.8f)))
-    }
-}
-
-/**
- * 表示する日の範囲。offset は「今日を左端にした位置」からのずれ（日数）。
- * 過ぎた日は持っている分だけ、先の日は予報がある分だけ送れる。
- */
-class DayWindow(all: List<DayForecast>, today: String, count: Int, offset: Int) {
-    private val n = count.coerceIn(1, maxOf(all.size, 1))
-    private val todayIndex = all.indexOfFirst { it.date >= today }.takeIf { it >= 0 } ?: 0
-    private val lastStart = maxOf(all.size - n, 0)
-    private val start = (todayIndex + offset).coerceIn(0, lastStart)
-
-    val visible: List<DayForecast> = all.drop(start).take(n)
-    val canGoBack = start > 0
-    val canGoForward = start < lastStart
-
-    /** delta 日送ったあとの offset（範囲の外には出さない）。 */
-    fun shifted(delta: Int): Int = (start + delta).coerceIn(0, lastStart) - todayIndex
-}
-
-class ShiftAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        val delta = parameters[DELTA] ?: return
-        updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-            val forecast = prefs[WeatherWidget.KEY_JSON]?.let { Forecast.fromJson(it) }
-            val window = DayWindow(
-                forecast?.days.orEmpty(),
-                forecast?.today().orEmpty(),
-                prefs[WeatherWidget.KEY_DAYS] ?: WeatherStore.DEFAULT_DAYS,
-                prefs[WeatherWidget.KEY_OFFSET] ?: 0,
-            )
-            prefs.toMutablePreferences().apply { this[WeatherWidget.KEY_OFFSET] = window.shifted(delta) }
-        }
-        WeatherWidget().update(context, glanceId)
-        OffsetReset.arm(context)
     }
 
     companion object {
-        val DELTA = ActionParameters.Key<Int>("delta")
+        const val ACTION_SHIFT = "com.example.weatherwidget.SHIFT"
+        const val EXTRA_DELTA = "delta"
     }
 }
 
-private const val YAHOO_WEATHER = "jp.co.yahoo.android.weather.type1"
+object WidgetRenderer {
+    private const val YAHOO_WEATHER = "jp.co.yahoo.android.weather.type1"
+    private const val ARROW_WIDTH_DP = 22f
+    private const val PADDING_DP = 8f
 
-/** タップで Yahoo!天気 を開く。入っていなければこのアプリの設定画面を開く。 */
-private fun tapAction(context: Context) =
-    context.packageManager.getLaunchIntentForPackage(YAHOO_WEATHER)
-        ?.let { actionStartActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        ?: actionStartActivity<MainActivity>()
+    private val WHITE = Color.parseColor("#EDEDED")
+    private val GRAY = Color.parseColor("#BDBDBD")
+    private val RED = Color.parseColor("#F2635B")
+    private val BLUE = Color.parseColor("#5B95F2")
 
-@Composable
-private fun DayColumn(day: DayForecast, m: Metrics) {
-    val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
-    // 過ぎた日（観測の結果）は日付を少し暗くする
-    val dateColor = if (day.observed) GRAY else WHITE
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                date?.let { "${it.monthValue}/${it.dayOfMonth}" } ?: day.date,
-                maxLines = 1,
-                style = TextStyle(color = dateColor, fontSize = m.text(1f)),
-            )
-            if (date != null) {
-                Text(
-                    " (" + date.dayOfWeek.getDisplayName(DateTextStyle.SHORT, Locale.JAPAN) + ")",
-                    maxLines = 1,
-                    style = TextStyle(color = dateColor, fontSize = m.text(0.8f)),
-                )
+    /** 置かれているすべてのウィジェットを描き直す。 */
+    fun updateAll(context: Context) {
+        val manager = AppWidgetManager.getInstance(context)
+        ids(context, manager).forEach { render(context, manager, it) }
+    }
+
+    /** 送った位置を元（今日が左端）に戻す。 */
+    fun resetOffsets(context: Context) {
+        val manager = AppWidgetManager.getInstance(context)
+        val state = state(context)
+        ids(context, manager).forEach { id ->
+            if (state.getInt(offsetKey(id), 0) != 0) {
+                state.edit().remove(offsetKey(id)).apply()
+                render(context, manager, id)
             }
         }
-        Spacer(GlanceModifier.height(m.dp(0.2f)))
-        IconRow(day.icons, m)
-        Spacer(GlanceModifier.height(m.dp(0.2f)))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${day.max ?: "--"}℃", maxLines = 1, style = TextStyle(color = RED, fontSize = m.text(1f)))
-            Text(" / ", maxLines = 1, style = TextStyle(color = WHITE, fontSize = m.text(1f)))
-            Text("${day.min ?: "--"}℃", maxLines = 1, style = TextStyle(color = BLUE, fontSize = m.text(1f)))
+    }
+
+    fun forget(context: Context, id: Int) {
+        state(context).edit().remove(offsetKey(id)).remove(backKey(id)).apply()
+    }
+
+    /** ウィジェット全体を作って渡す。 */
+    fun render(context: Context, manager: AppWidgetManager, id: Int) {
+        val store = WeatherStore(context)
+        val forecast = store.loadForecast()
+        val m = metrics(context, manager, id, store, forecast)
+        val rv = RemoteViews(context.packageName, R.layout.widget)
+        rv.setOnClickPendingIntent(R.id.root, yahooIntent(context))
+        rv.setTextViewText(R.id.place, store.place.name)
+        rv.setTextViewTextSize(R.id.place, TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.15f)
+
+        if (forecast == null || forecast.days.isEmpty()) {
+            val error = store.lastError
+            rv.setViewVisibility(R.id.days_frame, View.GONE)
+            rv.setViewVisibility(R.id.message, View.VISIBLE)
+            rv.setTextViewText(R.id.message, if (error == null) "読み込み中…" else "更新できませんでした\n$error")
+            rv.setTextViewTextSize(R.id.message, TypedValue.COMPLEX_UNIT_DIP, m.unit * 0.8f)
+            manager.updateAppWidget(id, rv)
+            return
         }
+
+        val state = state(context)
+        val window = DayWindow(forecast.days, forecast.today(), store.days, state.getInt(offsetKey(id), 0))
+        val back = state.getBoolean(backKey(id), false)
+        // 送るときの差分（shift）は、この並びの中で同じ種類の指示を置き換える形でまとめられる。
+        // 見せる ViewFlipper の切り替えを先に置いておく
+        rv.setViewVisibility(R.id.flipper_fwd, if (back) View.GONE else View.VISIBLE)
+        rv.setViewVisibility(R.id.flipper_back, if (back) View.VISIBLE else View.GONE)
+        // 両方の ViewFlipper に同じページを入れ、今の位置にそろえておく。
+        // Android 12 以降は番号付き（stable）で入れ、描き直しでもページを作り直さずに使い回させる
+        // （作り直すと前のページが消えて、送るときのアニメーションが出ない）。
+        // 番号付きで使い回させるには、先に removeAllViews を置く決まり
+        for (flipper in listOf(R.id.flipper_fwd, R.id.flipper_back)) {
+            rv.removeAllViews(flipper)
+            window.pages.forEachIndexed { i, page -> rv.addChild(flipper, pageView(context, page, forecast.today(), m), i) }
+            rv.setDisplayedChild(flipper, window.start)
+        }
+        setupZones(context, rv, id, window, m, withIntents = true)
+        manager.updateAppWidget(id, rv)
+    }
+
+    /** 1日送る。ページはもう渡してあるので、見せるページと押す場所だけを送る。 */
+    fun shift(context: Context, id: Int, delta: Int) {
+        val store = WeatherStore(context)
+        val forecast = store.loadForecast() ?: return
+        val manager = AppWidgetManager.getInstance(context)
+        val state = state(context)
+        val window = DayWindow(forecast.days, forecast.today(), store.days, state.getInt(offsetKey(id), 0))
+        val offset = window.shifted(delta)
+        val next = DayWindow(forecast.days, forecast.today(), store.days, offset)
+        if (next.start == window.start) return
+        val back = delta < 0
+        state.edit().putInt(offsetKey(id), offset).putBoolean(backKey(id), back).apply()
+
+        val shown = if (back) R.id.flipper_back else R.id.flipper_fwd
+        val hidden = if (back) R.id.flipper_fwd else R.id.flipper_back
+        val rv = RemoteViews(context.packageName, R.layout.widget)
+        // 隠れている方は黙って合わせ、見せる方でアニメーションさせる
+        rv.setViewVisibility(hidden, View.GONE)
+        rv.setDisplayedChild(hidden, next.start)
+        rv.setViewVisibility(shown, View.VISIBLE)
+        rv.setDisplayedChild(shown, next.start)
+        setupZones(context, rv, id, next, metrics(context, manager, id, store, forecast), withIntents = false)
+        manager.partiallyUpdateAppWidget(id, rv)
+    }
+
+    private val MIDS = intArrayOf(
+        R.id.zone_mid_1, R.id.zone_mid_2, R.id.zone_mid_3, R.id.zone_mid_4,
+        R.id.zone_mid_5, R.id.zone_mid_6, R.id.zone_mid_7,
+    )
+
+    /**
+     * 左右の押す場所。3日以上並べているときは、端の日の列も押す場所にする（wide）。
+     * 真ん中は何もしない場所で、押すと下の Yahoo!天気 が開く。
+     * 押す場所はレイアウトに全部置いてあり、表示を切り替えるだけ（足したり消したりしない）。
+     */
+    private fun setupZones(context: Context, rv: RemoteViews, id: Int, window: DayWindow, m: Metrics, withIntents: Boolean) {
+        val wide = window.count >= 3
+        fun side(delta: Int, enabled: Boolean, wideOn: Int, wideOff: Int, narrowOn: Int, narrowOff: Int) {
+            val shown = when {
+                wide && enabled -> wideOn
+                wide -> wideOff
+                enabled -> narrowOn
+                else -> narrowOff
+            }
+            for (zone in intArrayOf(wideOn, wideOff, narrowOn, narrowOff)) {
+                rv.setViewVisibility(zone, if (zone == shown) View.VISIBLE else View.GONE)
+            }
+            if (!withIntents) return
+            for (zone in intArrayOf(wideOn, wideOff, narrowOn, narrowOff)) {
+                rv.setTextViewTextSize(arrowOf(zone), TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.8f)
+            }
+            val intent = Intent(context, WeatherWidgetReceiver::class.java)
+                .setAction(WeatherWidgetReceiver.ACTION_SHIFT)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                .putExtra(WeatherWidgetReceiver.EXTRA_DELTA, delta)
+            val pending = PendingIntent.getBroadcast(
+                context, id * 2 + if (delta > 0) 1 else 0, intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            rv.setOnClickPendingIntent(wideOn, pending)
+            rv.setOnClickPendingIntent(narrowOn, pending)
+        }
+        side(-1, window.canGoBack, R.id.zone_left_wide_on, R.id.zone_left_wide_off, R.id.zone_left_narrow_on, R.id.zone_left_narrow_off)
+        val mids = if (wide) window.count - 2 else window.count
+        MIDS.forEachIndexed { i, mid -> rv.setViewVisibility(mid, if (i < mids) View.VISIBLE else View.GONE) }
+        side(1, window.canGoForward, R.id.zone_right_wide_on, R.id.zone_right_wide_off, R.id.zone_right_narrow_on, R.id.zone_right_narrow_off)
+    }
+
+    private fun arrowOf(zone: Int): Int = when (zone) {
+        R.id.zone_left_wide_on -> R.id.zone_left_wide_on_arrow
+        R.id.zone_left_wide_off -> R.id.zone_left_wide_off_arrow
+        R.id.zone_left_narrow_on -> R.id.zone_left_narrow_on_arrow
+        R.id.zone_left_narrow_off -> R.id.zone_left_narrow_off_arrow
+        R.id.zone_right_wide_on -> R.id.zone_right_wide_on_arrow
+        R.id.zone_right_wide_off -> R.id.zone_right_wide_off_arrow
+        R.id.zone_right_narrow_on -> R.id.zone_right_narrow_on_arrow
+        else -> R.id.zone_right_narrow_off_arrow
+    }
+
+    /** Android 12 以降は番号付きで入れる（描き直しで使い回される）。 */
+    private fun RemoteViews.addChild(parent: Int, child: RemoteViews, stableId: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) addStableView(parent, child, stableId) else addView(parent, child)
+    }
+
+    private fun pageView(context: Context, days: List<DayForecast>, today: String, m: Metrics): RemoteViews {
+        val page = RemoteViews(context.packageName, R.layout.widget_page)
+        page.removeAllViews(R.id.page)
+        days.forEachIndexed { i, d -> page.addChild(R.id.page, dayView(context, d, d.date == today, m), i) }
+        return page
+    }
+
+    private fun dayView(context: Context, day: DayForecast, isToday: Boolean, m: Metrics): RemoteViews {
+        val rv = RemoteViews(context.packageName, R.layout.widget_day)
+        if (isToday) rv.setInt(R.id.day, "setBackgroundResource", R.drawable.today_bg)
+
+        val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
+        val dateText = SpannableStringBuilder(date?.let { "${it.monthValue}/${it.dayOfMonth}" } ?: day.date)
+        if (date != null) {
+            dateText.append(
+                " (" + date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.JAPAN) + ")",
+                RelativeSizeSpan(0.8f), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+        }
+        rv.setTextViewText(R.id.day_date, dateText)
+        // 過ぎた日（観測の結果）は日付を少し暗くする
+        rv.setTextColor(R.id.day_date, if (day.observed) GRAY else WHITE)
+        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_DIP, m.unit)
+
+        val icons = day.icons
+        val iconPx = m.px(1.9f)
+        rv.setImageViewResource(R.id.icon_main, icons?.main?.icon ?: R.drawable.wx_dash)
+        rv.sizeImage(R.id.icon_main, iconPx)
+        val sub = icons?.sub
+        if (sub != null) {
+            rv.setViewVisibility(R.id.icon_sub, View.VISIBLE)
+            rv.setImageViewResource(R.id.icon_sub, sub.icon)
+            rv.sizeImage(R.id.icon_sub, iconPx)
+            // 「後」は矢印でつなぎ、「時々」「一時」は並べるだけ
+            if (icons.later) {
+                rv.setViewVisibility(R.id.icon_arrow, View.VISIBLE)
+                rv.sizeImage(R.id.icon_arrow, m.px(0.6f))
+            }
+        }
+
+        val temps = SpannableStringBuilder()
+            .append("${day.max ?: "--"}℃", ForegroundColorSpan(RED), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            .append(" / ")
+            .append("${day.min ?: "--"}℃", ForegroundColorSpan(BLUE), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        rv.setTextViewText(R.id.day_temps, temps)
+        rv.setTextViewTextSize(R.id.day_temps, TypedValue.COMPLEX_UNIT_DIP, m.unit)
+
         val bottom = if (day.observed) {
             // 過ぎた日は降水確率の代わりに降った量
             day.rain?.let { r -> String.format(Locale.US, "%.1fmm", r) to (r >= 1.0) }
         } else {
             day.pop?.let { p -> "$p%" to (p >= 50) }
         }
-        bottom?.let { (text, wet) ->
-            Text(
-                text,
-                maxLines = 1,
-                style = TextStyle(color = if (wet) BLUE else WHITE, fontSize = m.text(1f)),
-            )
-        }
+        rv.setTextViewText(R.id.day_bottom, bottom?.first ?: "")
+        rv.setTextColor(R.id.day_bottom, if (bottom?.second == true) BLUE else WHITE)
+        rv.setTextViewTextSize(R.id.day_bottom, TypedValue.COMPLEX_UNIT_DIP, m.unit)
+        return rv
     }
+
+    private fun RemoteViews.sizeImage(viewId: Int, px: Int) {
+        // 絵は 96dp で作ってあり、最大の大きさで縮めて合わせる
+        setInt(viewId, "setMaxHeight", px)
+        setInt(viewId, "setMaxWidth", px)
+    }
+
+    /** タップで Yahoo!天気 を開く。入っていなければこのアプリの設定画面を開く。 */
+    private fun yahooIntent(context: Context): PendingIntent {
+        val intent = context.packageManager.getLaunchIntentForPackage(YAHOO_WEATHER)
+            ?: Intent(context, MainActivity::class.java)
+        return PendingIntent.getActivity(
+            context, 0, intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+    }
+
+    /**
+     * 文字の大きさの決め方。1 単位＝日付の文字の大きさ（dp）。
+     * 1列の幅に「20℃ / 10℃」が収まり、縦に全部の行が収まる大きさを基本にし、設定の％を掛ける。
+     * 大きさは dp で指定するので、端末の文字サイズ設定には左右されない。
+     */
+    class Metrics(val unit: Float, private val density: Float) {
+        fun px(factor: Float): Int = (unit * factor * density).toInt().coerceAtLeast(1)
+    }
+
+    private fun metrics(context: Context, manager: AppWidgetManager, id: Int, store: WeatherStore, forecast: Forecast?): Metrics {
+        val options = manager.getAppWidgetOptions(id)
+        // 縦向きのときの幅と高さ（dp）
+        val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH).takeIf { it > 0 } ?: 320
+        val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 } ?: 120
+        val columns = store.days.coerceAtMost(forecast?.days?.size ?: store.days).coerceAtLeast(1)
+        val columnWidth = (width - ARROW_WIDTH_DP * 2) / columns
+        val byWidth = columnWidth / 5.6f
+        val byHeight = (height - PADDING_DP * 2) / 7.4f
+        val unit = minOf(byWidth, byHeight).coerceIn(6f, 48f) * store.textScale / 100f
+        return Metrics(unit, context.resources.displayMetrics.density)
+    }
+
+    private fun ids(context: Context, manager: AppWidgetManager): IntArray =
+        manager.getAppWidgetIds(ComponentName(context, WeatherWidgetReceiver::class.java))
+
+    private fun state(context: Context) =
+        context.applicationContext.getSharedPreferences("widget_state", Context.MODE_PRIVATE)
+
+    private fun offsetKey(id: Int) = "offset_$id"
+    private fun backKey(id: Int) = "back_$id"
 }
 
-@Composable
-private fun IconRow(icons: WeatherIcons?, m: Metrics) {
-    if (icons == null) {
-        // 予報を持っていなかった日（観測だけ）
-        Box(modifier = GlanceModifier.height(m.dp(2.1f)), contentAlignment = Alignment.Center) {
-            Text("－", style = TextStyle(color = DIM, fontSize = m.text(1.2f)))
-        }
-        return
-    }
-    val sub = icons.sub
-    val iconSize = m.dp(if (sub != null) 1.9f else 2.1f)
-    Row(modifier = GlanceModifier.height(m.dp(2.1f)), verticalAlignment = Alignment.CenterVertically) {
-        Image(
-            provider = ImageProvider(icons.main.icon),
-            contentDescription = null,
-            modifier = GlanceModifier.size(iconSize),
-        )
-        if (sub != null) {
-            // 「後」は矢印でつなぎ、「時々」「一時」は並べるだけ
-            if (icons.later) {
-                Image(
-                    provider = ImageProvider(R.drawable.wx_arrow),
-                    contentDescription = null,
-                    modifier = GlanceModifier.size(m.dp(0.6f)),
-                )
-            }
-            Image(
-                provider = ImageProvider(sub.icon),
-                contentDescription = null,
-                modifier = GlanceModifier.size(iconSize),
-            )
-        }
-    }
+/**
+ * 表示する日の範囲。offset は「今日を左端にした位置」からのずれ（日数）。
+ * 過ぎた日は持っている分だけ、先の日は予報がある分だけ送れる。
+ */
+class DayWindow(private val all: List<DayForecast>, today: String, count: Int, offset: Int) {
+    val count = count.coerceIn(1, maxOf(all.size, 1))
+    private val todayIndex = all.indexOfFirst { it.date >= today }.takeIf { it >= 0 } ?: 0
+    private val lastStart = maxOf(all.size - this.count, 0)
+    val start = (todayIndex + offset).coerceIn(0, lastStart)
+
+    val visible: List<DayForecast> get() = all.drop(start).take(count)
+    val canGoBack get() = start > 0
+    val canGoForward get() = start < lastStart
+
+    /** 送れるすべての位置のページ（ViewFlipper の子の順）。 */
+    val pages: List<List<DayForecast>> get() = (0..lastStart).map { all.drop(it).take(count) }
+
+    /** delta 日送ったあとの offset（範囲の外には出さない）。 */
+    fun shifted(delta: Int): Int = (start + delta).coerceIn(0, lastStart) - todayIndex
 }

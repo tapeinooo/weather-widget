@@ -36,12 +36,12 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                 ?: WeatherApi.fetchForecast(place.lat, place.lon).withHistory(previous, WeatherApi.today())
             store.saveForecast(forecast.toJson(), System.currentTimeMillis())
             store.lastError = null
-            WeatherWidget.pushToAll(applicationContext)
+            WidgetRenderer.updateAll(applicationContext)
             Result.success()
         } catch (e: Exception) {
             Log.w(TAG, "予報を更新できませんでした", e)
             store.lastError = e.toString().take(200)
-            runCatching { WeatherWidget.pushToAll(applicationContext) }
+            runCatching { WidgetRenderer.updateAll(applicationContext) }
             if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }

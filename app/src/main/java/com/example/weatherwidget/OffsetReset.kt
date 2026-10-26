@@ -10,10 +10,6 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 /**
@@ -24,7 +20,6 @@ import java.util.concurrent.TimeUnit
 object OffsetReset {
     private const val FALLBACK = "reset_offset"
     private const val FALLBACK_MINUTES = 10L
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var registered = false
 
     private val screenOff = object : BroadcastReceiver() {
@@ -32,14 +27,7 @@ object OffsetReset {
             val app = context.applicationContext
             unregister(app)
             WorkManager.getInstance(app).cancelUniqueWork(FALLBACK)
-            val pending = goAsync()
-            scope.launch {
-                try {
-                    WeatherWidget.resetOffsets(app)
-                } finally {
-                    pending.finish()
-                }
-            }
+            WidgetRenderer.resetOffsets(app)
         }
     }
 
@@ -68,7 +56,7 @@ object OffsetReset {
     class ResetWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
         override suspend fun doWork(): Result {
             unregister(applicationContext)
-            WeatherWidget.resetOffsets(applicationContext)
+            WidgetRenderer.resetOffsets(applicationContext)
             return Result.success()
         }
     }

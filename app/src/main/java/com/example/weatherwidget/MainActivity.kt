@@ -92,7 +92,7 @@ private fun SettingsScreen() {
     fun applyDisplay() {
         store.days = days
         store.textScale = textScale
-        scope.launch { WeatherWidget.pushToAll(context) }
+        WidgetRenderer.updateAll(context)
     }
 
     val workInfos by remember {
@@ -135,7 +135,7 @@ private fun SettingsScreen() {
         Text("たっぴぃず天気", style = MaterialTheme.typography.headlineSmall)
 
         Text("場所：${place.name}", style = MaterialTheme.typography.titleMedium)
-        val today = forecast?.days?.firstOrNull()
+        val today = forecast?.let { f -> f.days.firstOrNull { it.date == f.today() } }
         Text(
             when {
                 refreshing -> "更新しています…"

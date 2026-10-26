@@ -12,13 +12,15 @@ android {
         applicationId = "com.example.weatherwidget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 自分のスマホに入れるだけなので、デバッグ版と同じ鍵で署名する（上書きで入れられる）
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -41,9 +43,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
     // Android の org.json は単体テストでは中身がないので、本物を入れる
