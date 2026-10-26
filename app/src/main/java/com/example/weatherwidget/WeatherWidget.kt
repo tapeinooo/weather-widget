@@ -77,12 +77,16 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
 }
 
 private const val ARROW_WIDTH_DP = 22f
-private const val PADDING_DP = 8f
+/** ウィジェットの上下の余白（dp）。できる限り小さくする。 */
+private const val PADDING_DP = 1f
 
 /** この高さ（dp）より低いときは、ホーム画面の1行分の表示にする（地名と降水確率を隠す）。 */
 private const val COMPACT_HEIGHT_DP = 105
 
-/** 気温の数字の大きさ（日付の文字を 1 として）。 */
+/** 日付と曜日の文字の大きさ（unit を 1 として）。列の幅をいっぱいに使う大きさ。 */
+private const val DATE_SCALE = 1.25f
+
+/** 気温の数字の大きさ（unit を 1 として）。 */
 private const val TEMP_SCALE = 1.5f
 
 object WidgetRenderer {
@@ -238,7 +242,7 @@ object WidgetRenderer {
         rv.setTextViewText(R.id.day_date, dateText)
         // 過ぎた日（観測の結果）は日付を少し暗くする
         rv.setTextColor(R.id.day_date, if (day.observed) GRAY else WHITE)
-        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_DIP, m.unit)
+        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_DIP, m.unit * DATE_SCALE)
 
         val icons = day.icons
         val iconPx = m.px(1.9f)
@@ -297,8 +301,8 @@ object WidgetRenderer {
      * 大きさは dp で指定するので、端末の文字サイズ設定には左右されない。
      */
     class Metrics(val unit: Float, val density: Float, val compact: Boolean) {
-        /** 上下の余白。1行分のときは詰める。 */
-        fun padding(): Int = dp(if (compact) 4f else PADDING_DP)
+        /** 上下の余白。 */
+        fun padding(): Int = dp(PADDING_DP)
 
         fun px(factor: Float): Int = (unit * factor * density).toInt().coerceAtLeast(1)
 
@@ -316,14 +320,15 @@ object WidgetRenderer {
         val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 } ?: 120
         val columns = store.days.coerceAtMost(forecast?.days?.size ?: store.days).coerceAtLeast(1)
         val columnWidth = (width - ARROW_WIDTH_DP * 2) / columns
-        val byWidth = columnWidth / 5.6f
+        // 幅いっぱいに使う。いちばん幅をとるのは日付の行「10/26 (月)」で、文字の大きさの 4.7 倍ほど。
+        // 日の枠の左右のすきま（1dp ずつ）と、端末ごとの字体の違いの分に少し余裕を見る
+        val byWidth = (columnWidth - 2f) / (4.7f * DATE_SCALE * 1.03f)
         // 1行分のときは地名と降水確率の行がないので、そのぶん高さを見込まない。
         // 行の高さは文字の大きさの 1.25 倍として、日付 1.25 ＋ すきま 0.4 ＋ アイコン 2.1 ＋ 気温（TEMP_SCALE 倍）
         val compact = height < COMPACT_HEIGHT_DP
-        val rows = 1.25f + 0.4f + 2.1f + 1.25f * TEMP_SCALE +
+        val rows = 1.25f * DATE_SCALE + 0.4f + 2.1f + 1.25f * TEMP_SCALE +
             (if (compact) 0f else (1.15f * 1.4f + 0.3f) + 1.25f) // 地名の行と降水確率の行
-        val edge = if (compact) 4f else PADDING_DP
-        val byHeight = (height - edge * 2 - 4f) / rows // 4dp は日ごとの枠の上下の余白
+        val byHeight = (height - PADDING_DP * 2 - 2f) / rows // 2dp は日ごとの枠の上下の余白
         val unit = minOf(byWidth, byHeight).coerceIn(4f, 48f) * store.textScale / 100f
         return Metrics(unit, context.resources.displayMetrics.density, compact)
     }
