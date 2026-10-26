@@ -82,7 +82,7 @@ private fun SettingsScreen() {
     val scope = rememberCoroutineScope()
 
     var place by remember { mutableStateOf(store.place) }
-    var weather by remember { mutableStateOf(store.loadWeather()) }
+    var forecast by remember { mutableStateOf(store.loadForecast()) }
     var message by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
@@ -101,7 +101,7 @@ private fun SettingsScreen() {
     val refreshing = workInfos.any { !it.state.isFinished }
     LaunchedEffect(refreshing) {
         if (!refreshing) {
-            weather = store.loadWeather()
+            forecast = store.loadForecast()
             if (workInfos.any { it.state == WorkInfo.State.FAILED }) message = "更新に失敗しました"
         }
     }
@@ -109,7 +109,7 @@ private fun SettingsScreen() {
     fun choose(p: Place) {
         store.setPlace(p)
         place = p
-        weather = null
+        forecast = null
         results = emptyList()
         query = ""
         message = null
@@ -135,15 +135,21 @@ private fun SettingsScreen() {
         Text("たっぴぃず天気", style = MaterialTheme.typography.headlineSmall)
 
         Text("場所：${place.name}", style = MaterialTheme.typography.titleMedium)
-        val w = weather
+        val today = forecast?.days?.firstOrNull()
         Text(
             when {
                 refreshing -> "更新しています…"
-                w == null -> "まだ予報がありません"
-                else -> "${WeatherCodes.emoji(w.code, w.isDay)} ${WeatherCodes.label(w.code)}　${w.temperature.toInt()}°"
+                today == null -> "まだ予報がありません"
+                else -> "今日：${today.label}　${today.max ?: "--"}℃ / ${today.min ?: "--"}℃"
             },
             style = MaterialTheme.typography.bodyLarge,
         )
+        forecast?.let {
+            Text(
+                if (it.source == Forecast.SOURCE_JMA) "出典：気象庁ホームページ" else "出典：Open-Meteo（気象庁の予報がない地点のため）",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

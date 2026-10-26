@@ -34,6 +34,7 @@ class WeatherStore(context: Context) {
             .putString(KEY_LON, place.lon.toString())
             .remove(KEY_JSON)
             .remove(KEY_FETCHED_AT)
+            .remove(KEY_JMA_AREA)
             .apply()
     }
 
@@ -44,8 +45,15 @@ class WeatherStore(context: Context) {
             .apply()
     }
 
-    fun loadWeather(): Weather? =
-        forecastJson?.let { runCatching { WeatherApi.parseForecast(it) }.getOrNull() }
+    fun loadForecast(): Forecast? = forecastJson?.let { Forecast.fromJson(it) }
+
+    /** 気象庁の予報区域。まだ調べていなければ checked が false。日本の外なら area が null。 */
+    val jmaAreaChecked: Boolean get() = prefs.contains(KEY_JMA_AREA)
+    val jmaArea: JmaArea? get() = prefs.getString(KEY_JMA_AREA, null)?.let { JmaArea.fromJson(it) }
+
+    fun saveJmaArea(area: JmaArea?) {
+        prefs.edit().putString(KEY_JMA_AREA, area?.toJson() ?: "").apply()
+    }
 
     companion object {
         val DEFAULT = Place("東京", 35.6812, 139.7671)
@@ -55,6 +63,7 @@ class WeatherStore(context: Context) {
         const val MIN_SCALE = 50
         const val MAX_SCALE = 200
         private const val KEY_DAYS = "days"
+        private const val KEY_JMA_AREA = "jmaArea"
         private const val KEY_TEXT_SCALE = "textScale"
         private const val KEY_NAME = "name"
         private const val KEY_LAT = "lat"

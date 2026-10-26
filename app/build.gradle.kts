@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.weatherwidget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
     }
 
     buildTypes {
@@ -31,6 +31,9 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -41,4 +44,8 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    testImplementation("junit:junit:4.13.2")
+    // Android の org.json は単体テストでは中身がないので、本物を入れる
+    testImplementation("org.json:json:20240303")
 }

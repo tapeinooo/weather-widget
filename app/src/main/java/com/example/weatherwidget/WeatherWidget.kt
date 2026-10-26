@@ -139,9 +139,9 @@ private class Metrics(width: Dp, height: Dp, columns: Int, scalePercent: Int, pr
 @Composable
 private fun WidgetContent() {
     val prefs = currentState<Preferences>()
-    val weather = prefs[WeatherWidget.KEY_JSON]?.let { runCatching { WeatherApi.parseForecast(it) }.getOrNull() }
+    val forecast = prefs[WeatherWidget.KEY_JSON]?.let { Forecast.fromJson(it) }
     val place = prefs[WeatherWidget.KEY_PLACE] ?: WeatherStore.DEFAULT.name
-    val days = weather?.daily?.take(prefs[WeatherWidget.KEY_DAYS] ?: WeatherStore.DEFAULT_DAYS).orEmpty()
+    val days = forecast?.days?.take(prefs[WeatherWidget.KEY_DAYS] ?: WeatherStore.DEFAULT_DAYS).orEmpty()
     val size = LocalSize.current
     val context = LocalContext.current
     val m = Metrics(
@@ -192,7 +192,7 @@ private fun tapAction(context: Context) =
         ?: actionStartActivity<MainActivity>()
 
 @Composable
-private fun DayColumn(day: DailyForecast, m: Metrics) {
+private fun DayColumn(day: DayForecast, m: Metrics) {
     val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.Bottom) {
@@ -210,14 +210,14 @@ private fun DayColumn(day: DailyForecast, m: Metrics) {
             }
         }
         Spacer(GlanceModifier.height(m.dp(0.2f)))
-        WeatherIcons(day.icons, m)
+        IconRow(day.icons, m)
         Spacer(GlanceModifier.height(m.dp(0.2f)))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("${day.max.toInt()}℃", maxLines = 1, style = TextStyle(color = RED, fontSize = m.text(1f)))
+            Text("${day.max ?: "--"}℃", maxLines = 1, style = TextStyle(color = RED, fontSize = m.text(1f)))
             Text(" / ", maxLines = 1, style = TextStyle(color = WHITE, fontSize = m.text(1f)))
-            Text("${day.min.toInt()}℃", maxLines = 1, style = TextStyle(color = BLUE, fontSize = m.text(1f)))
+            Text("${day.min ?: "--"}℃", maxLines = 1, style = TextStyle(color = BLUE, fontSize = m.text(1f)))
         }
-        day.precipProbability?.let { p ->
+        day.pop?.let { p ->
             Text(
                 "$p%",
                 maxLines = 1,
@@ -232,11 +232,18 @@ private fun DayColumn(day: DailyForecast, m: Metrics) {
 }
 
 @Composable
-private fun WeatherIcons(icons: List<WeatherCategory>, m: Metrics) {
-    val iconSize = m.dp(if (icons.size > 1) 1.9f else 2.1f)
+private fun IconRow(icons: WeatherIcons, m: Metrics) {
+    val sub = icons.sub
+    val iconSize = m.dp(if (sub != null) 1.9f else 2.1f)
     Row(modifier = GlanceModifier.height(m.dp(2.1f)), verticalAlignment = Alignment.CenterVertically) {
-        icons.forEachIndexed { i, category ->
-            if (i > 0) {
+        Image(
+            provider = ImageProvider(icons.main.icon),
+            contentDescription = null,
+            modifier = GlanceModifier.size(iconSize),
+        )
+        if (sub != null) {
+            // 「後」は矢印でつなぎ、「時々」「一時」は並べるだけ
+            if (icons.later) {
                 Image(
                     provider = ImageProvider(R.drawable.wx_arrow),
                     contentDescription = null,
@@ -244,7 +251,7 @@ private fun WeatherIcons(icons: List<WeatherCategory>, m: Metrics) {
                 )
             }
             Image(
-                provider = ImageProvider(category.icon),
+                provider = ImageProvider(sub.icon),
                 contentDescription = null,
                 modifier = GlanceModifier.size(iconSize),
             )

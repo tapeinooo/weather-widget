@@ -1,17 +1,47 @@
 package com.example.weatherwidget
 
-/** ウィジェットに出すアイコンの種類。雨・雪・雷は少しでも降る時間があれば優先する。 */
-enum class WeatherCategory(val icon: Int, val isPrecipitation: Boolean) {
-    SUN(R.drawable.wx_sun, false),
-    CLOUD(R.drawable.wx_cloud, false),
-    FOG(R.drawable.wx_fog, false),
-    RAIN(R.drawable.wx_rain, true),
-    SNOW(R.drawable.wx_snow, true),
-    THUNDER(R.drawable.wx_thunder, true),
+/** ウィジェットに出すアイコンの種類。 */
+enum class WeatherCategory(val icon: Int, val isPrecipitation: Boolean, val char: String) {
+    SUN(R.drawable.wx_sun, false, "晴"),
+    CLOUD(R.drawable.wx_cloud, false, "曇"),
+    FOG(R.drawable.wx_fog, false, "霧"),
+    RAIN(R.drawable.wx_rain, true, "雨"),
+    SNOW(R.drawable.wx_snow, true, "雪"),
+    THUNDER(R.drawable.wx_thunder, true, "雷雨"),
 }
 
-/** WMO の天気コードを絵文字・日本語・アイコンの種類にする。 */
+/** 1日のアイコン。later なら「後」（矢印でつなぐ）、そうでなければ「時々」「一時」（並べるだけ）。 */
+data class WeatherIcons(val main: WeatherCategory, val sub: WeatherCategory?, val later: Boolean)
+
 object WeatherCodes {
+
+    /** 「曇後一時雨」「晴時々曇」「晴山沿い雷雨」などから、主なアイコンと2つ目のアイコンを決める。 */
+    fun iconsFromLabel(label: String): WeatherIcons {
+        val found = mutableListOf<Pair<Int, WeatherCategory>>()
+        var i = 0
+        while (i < label.length) {
+            val category = when {
+                label.startsWith("雷", i) -> WeatherCategory.THUNDER
+                label.startsWith("晴", i) -> WeatherCategory.SUN
+                label.startsWith("曇", i) -> WeatherCategory.CLOUD
+                label.startsWith("霧", i) -> WeatherCategory.FOG
+                label.startsWith("雨", i) -> WeatherCategory.RAIN
+                label.startsWith("雪", i) -> WeatherCategory.SNOW
+                else -> null
+            }
+            if (category != null) found += i to category
+            // 「雷雨」は雷1つとして数える
+            i += if (category == WeatherCategory.THUNDER && label.startsWith("雷雨", i)) 2 else 1
+        }
+        val distinct = found.distinctBy { it.second }
+        val main = distinct.firstOrNull() ?: return WeatherIcons(WeatherCategory.CLOUD, null, false)
+        val sub = distinct.getOrNull(1)
+        val laterAt = label.indexOf('後')
+        val later = sub != null && laterAt in main.first until sub.first
+        return WeatherIcons(main.second, sub?.second, later)
+    }
+
+    /** Open-Meteo（WMO）の天気コードの種類。 */
     fun category(code: Int): WeatherCategory = when (code) {
         0, 1, 2 -> WeatherCategory.SUN
         3 -> WeatherCategory.CLOUD
@@ -29,42 +59,5 @@ object WeatherCodes {
         val wet = counts.filterKeys { it.isPrecipitation }.filterValues { it >= 2 }
         val pool = wet.ifEmpty { counts }
         return pool.maxWithOrNull(compareBy({ it.value }, { it.key.ordinal }))?.key
-    }
-
-    fun emoji(code: Int, isDay: Boolean = true): String = when (code) {
-        0 -> if (isDay) "☀️" else "🌙"
-        1 -> if (isDay) "🌤️" else "🌙"
-        2 -> "⛅"
-        3 -> "☁️"
-        45, 48 -> "🌫️"
-        51, 53, 55, 80, 81 -> "🌦️"
-        56, 57, 61, 63, 65, 66, 67, 82 -> "🌧️"
-        71, 73, 75, 77, 85, 86 -> "🌨️"
-        95, 96, 99 -> "⛈️"
-        else -> "❔"
-    }
-
-    fun label(code: Int): String = when (code) {
-        0 -> "快晴"
-        1 -> "晴れ"
-        2 -> "晴れ時々くもり"
-        3 -> "くもり"
-        45, 48 -> "霧"
-        51, 53, 55 -> "霧雨"
-        56, 57 -> "着氷性の霧雨"
-        61 -> "小雨"
-        63 -> "雨"
-        65 -> "強い雨"
-        66, 67 -> "着氷性の雨"
-        71 -> "小雪"
-        73 -> "雪"
-        75 -> "大雪"
-        77 -> "霧雪"
-        80, 81 -> "にわか雨"
-        82 -> "激しいにわか雨"
-        85, 86 -> "にわか雪"
-        95 -> "雷雨"
-        96, 99 -> "ひょうを伴う雷雨"
-        else -> "不明"
     }
 }
