@@ -12,10 +12,10 @@ import android.os.Bundle
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
-import android.text.style.RelativeSizeSpan
 import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
@@ -78,6 +78,9 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
 
 private const val ARROW_WIDTH_DP = 22f
 private const val PADDING_DP = 8f
+
+/** 気温の数字の大きさ（日付の文字を 1 として）。 */
+private const val TEMP_SCALE = 1.5f
 
 object WidgetRenderer {
     private const val YAHOO_WEATHER = "jp.co.yahoo.android.weather.type1"
@@ -216,10 +219,17 @@ object WidgetRenderer {
         val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
         val dateText = SpannableStringBuilder(date?.let { "${it.monthValue}/${it.dayOfMonth}" } ?: day.date)
         if (date != null) {
-            dateText.append(
-                " (" + date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.JAPAN) + ")",
-                RelativeSizeSpan(0.8f), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
-            )
+            // 曜日の漢字だけ色を付ける：日・祝日は赤、土は青（大きさは日付と同じ）
+            dateText.append(" (")
+            val kanji = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.JAPAN)
+            val color = when {
+                JapaneseHolidays.isHoliday(date) || date.dayOfWeek == DayOfWeek.SUNDAY -> RED
+                date.dayOfWeek == DayOfWeek.SATURDAY -> BLUE
+                else -> null
+            }
+            if (color != null) dateText.append(kanji, ForegroundColorSpan(color), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            else dateText.append(kanji)
+            dateText.append(")")
         }
         rv.setTextViewText(R.id.day_date, dateText)
         // 過ぎた日（観測の結果）は日付を少し暗くする
@@ -241,11 +251,12 @@ object WidgetRenderer {
         }
 
         val temps = SpannableStringBuilder()
-            .append("${day.max ?: "--"}℃", ForegroundColorSpan(RED), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            .append("${day.max ?: "--"}", ForegroundColorSpan(RED), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             .append(" / ")
-            .append("${day.min ?: "--"}℃", ForegroundColorSpan(BLUE), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            .append("${day.min ?: "--"}", ForegroundColorSpan(BLUE), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         rv.setTextViewText(R.id.day_temps, temps)
-        rv.setTextViewTextSize(R.id.day_temps, TypedValue.COMPLEX_UNIT_DIP, m.unit)
+        // ℃ をなくした分、数字を大きくする
+        rv.setTextViewTextSize(R.id.day_temps, TypedValue.COMPLEX_UNIT_DIP, m.unit * TEMP_SCALE)
 
         val bottom = if (day.observed) {
             // 過ぎた日は降水確率の代わりに降った量
@@ -298,7 +309,7 @@ object WidgetRenderer {
         val columns = store.days.coerceAtMost(forecast?.days?.size ?: store.days).coerceAtLeast(1)
         val columnWidth = (width - ARROW_WIDTH_DP * 2) / columns
         val byWidth = columnWidth / 5.6f
-        val byHeight = (height - PADDING_DP * 2) / 7.4f
+        val byHeight = (height - PADDING_DP * 2) / (7.4f + TEMP_SCALE - 1f)
         val unit = minOf(byWidth, byHeight).coerceIn(6f, 48f) * store.textScale / 100f
         return Metrics(unit, context.resources.displayMetrics.density)
     }
