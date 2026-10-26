@@ -22,12 +22,18 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             val place = store.place
             if (!store.jmaAreaChecked) store.saveJmaArea(JmaApi.resolveArea(place.lat, place.lon))
             val area = store.jmaArea
-            // 日本の中は気象庁。日本の外か、気象庁から取れないときは Open-Meteo
-            val forecast = area?.let { a ->
-                runCatching { JmaApi.fetchForecast(a, store.loadForecast()) }
-                    .onFailure { Log.w(TAG, "気象庁の予報を読めませんでした", it) }
-                    .getOrNull()
-            } ?: WeatherApi.fetchForecast(place.lat, place.lon)
+            val previous = store.loadForecast()
+            // 日本の中は気象庁（過ぎた日はアメダスの観測）。日本の外か、気象庁から取れないときは Open-Meteo
+            val jma = area?.let { a ->
+                runCatching {
+                    val f = JmaApi.fetchForecast(a, previous).withHistory(previous, JmaApi.today())
+                    runCatching { JmaApi.addObservations(f, a) }
+                        .onFailure { Log.w(TAG, "アメダスの観測を読めませんでした", it) }
+                        .getOrDefault(f)
+                }.onFailure { Log.w(TAG, "気象庁の予報を読めませんでした", it) }.getOrNull()
+            }
+            val forecast = jma
+                ?: WeatherApi.fetchForecast(place.lat, place.lon).withHistory(previous, WeatherApi.today())
             store.saveForecast(forecast.toJson(), System.currentTimeMillis())
             WeatherWidget.pushToAll(applicationContext)
             Result.success()

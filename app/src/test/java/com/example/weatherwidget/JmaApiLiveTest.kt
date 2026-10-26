@@ -46,6 +46,7 @@ class JmaApiLiveTest {
         val f = WeatherApi.fetchForecast(40.7128, -74.0060)
         println("== New York (Open-Meteo)")
         f.days.forEach { println("  ${it.date} ${it.label} ${it.icons} ${it.max}/${it.min} ${it.pop}%") }
-        assertEquals(7, f.days.size)
+        assertEquals("過去10日＋7日", 17, f.days.size)
+        assertTrue(f.days.take(10).all { it.observed })
     }
 }

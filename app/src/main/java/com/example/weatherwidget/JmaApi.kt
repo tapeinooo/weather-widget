@@ -5,6 +5,7 @@ import org.json.JSONObject
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** 地点に対応する気象庁の予報区域。 */
 data class JmaArea(
@@ -80,7 +81,7 @@ object JmaApi {
         // 奄美地方は鹿児島県のファイルに入っている
         val path = if (area.office == "460040") "460100" else area.office
         val root = JSONArray(Http.get("$BASE/forecast/data/forecast/$path.json"))
-        val today = LocalDate.now(JST).toString()
+        val today = today()
 
         class Day(var code: String? = null, var max: Int? = null, var min: Int? = null, var pop: Int? = null)
         val days = sortedMapOf<String, Day>()
@@ -139,6 +140,51 @@ object JmaApi {
         }
         if (result.isEmpty()) throw IllegalStateException("気象庁の予報に $today 以降の日がない")
         return Forecast(Forecast.SOURCE_JMA, result).fillFrom(previous)
+    }
+
+    /** 予報を読むときの「今日」（日本時間）。 */
+    fun today(): String = LocalDate.now(JST).toString()
+
+    /**
+     * アメダスの観測を入れる。
+     * - 過ぎた日（10日前まで）で、まだ観測を入れていない日：その日の最高・最低気温と降水量
+     * - 今日：最高・最低気温の予報がなければ、今までの観測で補う（朝の最低気温は予報から消えるため）
+     * 読めなかった日はそのままにして、次の更新でまた試す。
+     */
+    suspend fun addObservations(forecast: Forecast, area: JmaArea): Forecast {
+        val today = LocalDate.now(JST)
+        val days = forecast.days.associateBy { it.date }.toMutableMap()
+        for (back in Forecast.HISTORY_DAYS downTo 1) {
+            val date = today.minusDays(back)
+            val key = date.toString()
+            if (days[key]?.observed == true) continue
+            val obs = runCatching { observe(area.amedas, date, hour = 21) }.getOrNull() ?: continue
+            val base = days[key] ?: DayForecast(key, "", null, null, null)
+            days[key] = base.copy(max = obs.max ?: base.max, min = obs.min ?: base.min, rain = obs.rain, observed = true)
+        }
+        val todayKey = today.toString()
+        days[todayKey]?.takeIf { it.max == null || it.min == null }?.let { d ->
+            val latest = Http.get("$BASE/amedas/data/latest_time.txt").trim()
+            val hour = latest.substring(11, 13).toIntOrNull() ?: return@let
+            val obs = runCatching { observe(area.amedas, today, hour = hour / 3 * 3) }.getOrNull() ?: return@let
+            days[todayKey] = d.copy(max = d.max ?: obs.max, min = d.min ?: obs.min)
+        }
+        return forecast.copy(days = days.values.sortedBy { it.date })
+    }
+
+    private class Observation(val max: Int?, val min: Int?, val rain: Double?)
+
+    /** アメダスの3時間分のファイルの最後の値（その日のそれまでの最高・最低気温と24時間降水量）。 */
+    private suspend fun observe(amedas: String, date: LocalDate, hour: Int): Observation? {
+        val file = date.toString().replace("-", "") + "_" + "%02d".format(hour)
+        val data = JSONObject(Http.get("$BASE/amedas/data/point/$amedas/$file.json"))
+        val last = data.keys().asSequence().maxOrNull()?.let { data.getJSONObject(it) } ?: return null
+        fun value(name: String): Double? = last.optJSONArray(name)?.takeUnless { it.isNull(0) }?.optDouble(0)
+        return Observation(
+            max = value("maxTemp")?.roundToInt(),
+            min = value("minTemp")?.roundToInt(),
+            rain = value("precipitation24h"),
+        )
     }
 
     /** timeSeries[index] の中から code の区域を探し、(時刻の一覧, 区域) を返す。 */

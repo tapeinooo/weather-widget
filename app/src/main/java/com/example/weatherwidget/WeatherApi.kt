@@ -2,6 +2,8 @@ package com.example.weatherwidget
 
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.time.Instant
+import java.time.ZoneOffset
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -17,8 +19,8 @@ object WeatherApi {
         val url = "https://api.open-meteo.com/v1/forecast" +
             "?latitude=${coord(lat)}&longitude=${coord(lon)}" +
             "&hourly=weather_code,precipitation_probability" +
-            "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
-            "&timezone=auto&forecast_days=7"
+            "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum" +
+            "&timezone=auto&forecast_days=7&past_days=${Forecast.HISTORY_DAYS}"
         return parseForecast(Http.get(url))
     }
 
@@ -30,6 +32,10 @@ object WeatherApi {
         val maxes = daily.getJSONArray("temperature_2m_max")
         val mins = daily.getJSONArray("temperature_2m_min")
         val precips = daily.optJSONArray("precipitation_probability_max")
+        val rains = daily.optJSONArray("precipitation_sum")
+        // その地点の「今日」。それより前の日は観測（再解析）の値として扱う
+        val offset = ZoneOffset.ofTotalSeconds(root.optInt("utc_offset_seconds"))
+        val today = Instant.now().atOffset(offset).toLocalDate().toString()
         val hourly = root.optJSONObject("hourly")
         val hourTimes = hourly?.optJSONArray("time")
         val hourCodes = hourly?.optJSONArray("weather_code")
@@ -65,6 +71,8 @@ object WeatherApi {
                 max = maxes.getDouble(i).roundToInt(),
                 min = mins.getDouble(i).roundToInt(),
                 pop = pop,
+                rain = rains?.takeUnless { it.isNull(i) }?.getDouble(i)?.takeIf { date < today },
+                observed = date < today,
             )
         }
         return Forecast(Forecast.SOURCE_OPEN_METEO, days)
@@ -82,6 +90,9 @@ object WeatherApi {
             Place(name, r.getDouble("latitude"), r.getDouble("longitude"))
         }
     }
+
+    /** 予報を読むときの「今日」（端末の日付）。 */
+    fun today(): String = java.time.LocalDate.now().toString()
 
     private fun coord(value: Double) = String.format(Locale.US, "%.4f", value)
 }
