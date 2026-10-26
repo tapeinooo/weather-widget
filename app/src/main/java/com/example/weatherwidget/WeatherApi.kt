@@ -17,7 +17,16 @@ data class DailyForecast(
     val max: Double,
     val min: Double,
     val precipProbability: Int?,
-)
+    /** 午前（6〜12時）と午後（12〜18時）の天気。同じなら1つのアイコンにする。 */
+    val morning: WeatherCategory?,
+    val afternoon: WeatherCategory?,
+) {
+    val icons: List<WeatherCategory>
+        get() {
+            val parts = listOfNotNull(morning, afternoon).distinct()
+            return parts.ifEmpty { listOf(WeatherCodes.category(code)) }
+        }
+}
 
 data class Weather(
     val temperature: Double,
@@ -28,11 +37,15 @@ data class Weather(
 
 /** Open-Meteo（無料・API キー不要）から天気と地名を取る。 */
 object WeatherApi {
+    private val MORNING = 6..11
+    private val AFTERNOON = 12..17
+    private val DAYTIME = 6..17
 
     suspend fun fetchForecastJson(lat: Double, lon: Double): String {
         val url = "https://api.open-meteo.com/v1/forecast" +
             "?latitude=${coord(lat)}&longitude=${coord(lon)}" +
             "&current=temperature_2m,weather_code,is_day" +
+            "&hourly=weather_code,precipitation_probability" +
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
             "&timezone=auto&forecast_days=7"
         return get(url)
@@ -47,13 +60,39 @@ object WeatherApi {
         val maxes = daily.getJSONArray("temperature_2m_max")
         val mins = daily.getJSONArray("temperature_2m_min")
         val precips = daily.optJSONArray("precipitation_probability_max")
+        val hourly = root.optJSONObject("hourly")
+        val hourTimes = hourly?.optJSONArray("time")
+        val hourCodes = hourly?.optJSONArray("weather_code")
+        val hourPrecips = hourly?.optJSONArray("precipitation_probability")
+        // "2026-10-26T13:00" → 日付ごとに (時, コード) と (時, 降水確率) を集める
+        val byDate = mutableMapOf<String, MutableList<Pair<Int, Int>>>()
+        val precipByDate = mutableMapOf<String, MutableList<Pair<Int, Int>>>()
+        if (hourTimes != null && hourCodes != null) {
+            for (i in 0 until minOf(hourTimes.length(), hourCodes.length())) {
+                if (hourCodes.isNull(i)) continue
+                val t = hourTimes.getString(i)
+                val hour = t.substringAfter('T').substringBefore(':').toIntOrNull() ?: continue
+                byDate.getOrPut(t.substringBefore('T')) { mutableListOf() } += hour to hourCodes.getInt(i)
+                if (hourPrecips != null && i < hourPrecips.length() && !hourPrecips.isNull(i)) {
+                    precipByDate.getOrPut(t.substringBefore('T')) { mutableListOf() } += hour to hourPrecips.getInt(i)
+                }
+            }
+        }
+        fun period(date: String, hours: IntRange) =
+            WeatherCodes.periodCategory(byDate[date].orEmpty().filter { it.first in hours }.map { it.second })
+        // 降水確率はアイコンと同じ日中（6〜18時）の最大。時間ごとの値がなければ1日の最大
+        fun daytimePrecip(date: String) =
+            precipByDate[date].orEmpty().filter { it.first in DAYTIME }.maxOfOrNull { it.second }
         val days = (0 until times.length()).map { i ->
+            val date = times.getString(i)
             DailyForecast(
-                date = times.getString(i),
+                date = date,
                 code = codes.getInt(i),
                 max = maxes.getDouble(i),
                 min = mins.getDouble(i),
-                precipProbability = precips?.takeUnless { it.isNull(i) }?.getInt(i),
+                precipProbability = daytimePrecip(date) ?: precips?.takeUnless { it.isNull(i) }?.getInt(i),
+                morning = period(date, MORNING),
+                afternoon = period(date, AFTERNOON),
             )
         }
         return Weather(

@@ -16,13 +16,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -37,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -75,6 +78,14 @@ private fun SettingsScreen() {
     var message by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
+    var days by remember { mutableStateOf(store.days) }
+    var textScale by remember { mutableStateOf(store.textScale) }
+
+    fun applyDisplay() {
+        store.days = days
+        store.textScale = textScale
+        scope.launch { WeatherWidget.pushToAll(context) }
+    }
 
     val workInfos by remember {
         WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(WeatherWorker.NOW)
@@ -110,10 +121,10 @@ private fun SettingsScreen() {
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp),
+        modifier = Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("天気ウィジェット", style = MaterialTheme.typography.headlineSmall)
+        Text("たっぴぃず天気", style = MaterialTheme.typography.headlineSmall)
 
         Text("場所：${place.name}", style = MaterialTheme.typography.titleMedium)
         val w = weather
@@ -137,6 +148,34 @@ private fun SettingsScreen() {
         }
 
         HorizontalDivider()
+        Text("表示", style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("表示する日数（今日を含む）", modifier = Modifier.weight(1f))
+            OutlinedButton(
+                enabled = days > WeatherStore.MIN_DAYS,
+                onClick = { days--; applyDisplay() },
+            ) { Text("−") }
+            Text("$days 日", modifier = Modifier.width(48.dp))
+            OutlinedButton(
+                enabled = days < WeatherStore.MAX_DAYS,
+                onClick = { days++; applyDisplay() },
+            ) { Text("＋") }
+        }
+        Text("文字の大きさ：$textScale%")
+        Slider(
+            value = textScale.toFloat(),
+            onValueChange = { textScale = (it / 5).toInt() * 5 },
+            onValueChangeFinished = { applyDisplay() },
+            valueRange = WeatherStore.MIN_SCALE.toFloat()..WeatherStore.MAX_SCALE.toFloat(),
+            steps = (WeatherStore.MAX_SCALE - WeatherStore.MIN_SCALE) / 5 - 1,
+        )
+        Text(
+            "100% はウィジェットの幅と高さにちょうど収まる大きさです。端末の文字サイズの設定には左右されません。",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedButton(onClick = { textScale = 100; applyDisplay() }) { Text("100% に戻す") }
+
+        HorizontalDivider()
         Text("地名で探す", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
@@ -158,18 +197,16 @@ private fun SettingsScreen() {
                 },
             ) { Text("検索") }
         }
-        LazyColumn {
-            items(results) { p ->
-                Text(
-                    p.name,
-                    modifier = Modifier.fillMaxWidth().clickable { choose(p) }.padding(vertical = 12.dp),
-                )
-                HorizontalDivider()
-            }
+        results.forEach { p ->
+            Text(
+                p.name,
+                modifier = Modifier.fillMaxWidth().clickable { choose(p) }.padding(vertical = 12.dp),
+            )
+            HorizontalDivider()
         }
 
         Text(
-            "ホーム画面を長押し →「ウィジェット」→「天気ウィジェット」で置けます。1時間ごとに自動で更新します。",
+            "ホーム画面を長押し →「ウィジェット」→「たっぴぃず天気」で置けます。1時間ごとに自動で更新します。",
             style = MaterialTheme.typography.bodySmall,
         )
     }
