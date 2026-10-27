@@ -87,6 +87,8 @@ private const val COMPACT_HEIGHT_DP = 105
 /** 日付と曜日の文字の大きさ（unit を 1 として）。列の幅をいっぱいに使う大きさ。 */
 private const val DATE_SCALE = 1.25f
 
+private enum class DayKind { RED, BLUE }
+
 /** 気温の数字の大きさ（unit を 1 として）。 */
 private const val TEMP_SCALE = 1.5f
 
@@ -223,21 +225,36 @@ object WidgetRenderer {
 
     private fun dayView(context: Context, day: DayForecast, isToday: Boolean, m: Metrics): RemoteViews {
         val rv = RemoteViews(context.packageName, R.layout.widget_day)
-        rv.setInt(R.id.day, "setBackgroundResource", if (isToday) R.drawable.today_bg else 0)
-
         val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
         val dateText = SpannableStringBuilder(date?.let { "${it.monthValue}/${it.dayOfMonth}" } ?: day.date)
+        // 日・祝日は赤、土は青（曜日の漢字の色と、その日の列の背景のうっすらした色）
+        val kind = when {
+            date == null -> null
+            JapaneseHolidays.isHoliday(date) || date.dayOfWeek == DayOfWeek.SUNDAY -> DayKind.RED
+            date.dayOfWeek == DayOfWeek.SATURDAY -> DayKind.BLUE
+            else -> null
+        }
+        // 背景は毎回指定する（ホーム画面が前の部品に上書きで当てはめるため、なしも 0 で指定する）
+        rv.setInt(
+            R.id.day, "setBackgroundResource",
+            when {
+                isToday && kind == DayKind.RED -> R.drawable.today_red_bg
+                isToday && kind == DayKind.BLUE -> R.drawable.today_sat_bg
+                isToday -> R.drawable.today_bg
+                kind == DayKind.RED -> R.drawable.red_bg
+                kind == DayKind.BLUE -> R.drawable.sat_bg
+                else -> 0
+            },
+        )
         if (date != null) {
-            // 曜日の漢字だけ色を付ける：日・祝日は赤、土は青（大きさは日付と同じ）
+            // 曜日の漢字だけ色を付ける（大きさは日付と同じ）
             dateText.append(" (")
             val kanji = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.JAPAN)
-            val color = when {
-                JapaneseHolidays.isHoliday(date) || date.dayOfWeek == DayOfWeek.SUNDAY -> RED
-                date.dayOfWeek == DayOfWeek.SATURDAY -> BLUE
-                else -> null
+            when (kind) {
+                DayKind.RED -> dateText.append(kanji, ForegroundColorSpan(RED), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                DayKind.BLUE -> dateText.append(kanji, ForegroundColorSpan(BLUE), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                null -> dateText.append(kanji)
             }
-            if (color != null) dateText.append(kanji, ForegroundColorSpan(color), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            else dateText.append(kanji)
             dateText.append(")")
         }
         rv.setTextViewText(R.id.day_date, dateText)
