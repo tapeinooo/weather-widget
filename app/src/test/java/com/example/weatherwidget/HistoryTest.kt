@@ -46,7 +46,7 @@ class HistoryTest {
         println("== 麻布十番（観測つき）")
         withObs.days.forEach { println("  ${it.date} ${it.label.ifEmpty { "（予報なし）" }} ${it.max}/${it.min} pop=${it.pop} rain=${it.rain} observed=${it.observed}") }
         val past = withObs.days.filter { it.date < JmaApi.today() }
-        assertTrue("過ぎた日が9日以上（10日前の夜の分はもう消えていることがある）", past.size >= 9)
+        assertTrue("過ぎた日が7日以上（アメダスの観測は約9日分しか残らず、夜は古い日から消える）", past.size >= 7)
         assertTrue(past.all { it.observed && it.max != null && it.min != null && it.rain != null })
         assertNotNull("今日の最低気温を観測で補う", withObs.days.first { it.date == JmaApi.today() }.min)
     }

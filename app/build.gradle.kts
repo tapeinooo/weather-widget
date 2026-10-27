@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.weatherwidget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.14"
+        versionCode = 17
+        versionName = "1.16"
     }
 
     buildTypes {
