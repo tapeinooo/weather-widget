@@ -85,7 +85,7 @@ private const val PADDING_DP = 1f
 private const val COMPACT_HEIGHT_DP = 105
 
 /** 日付と曜日の文字の大きさ（unit を 1 として）。列の幅をいっぱいに使う大きさ。 */
-private const val DATE_SCALE = 1.25f
+private const val DATE_SCALE = 1.4f
 
 private enum class DayKind { RED, BLUE }
 
@@ -226,7 +226,10 @@ object WidgetRenderer {
     private fun dayView(context: Context, day: DayForecast, isToday: Boolean, m: Metrics): RemoteViews {
         val rv = RemoteViews(context.packageName, R.layout.widget_day)
         val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
-        val dateText = SpannableStringBuilder(date?.let { "${it.monthValue}/${it.dayOfMonth}" } ?: day.date)
+        // カレンダーと同じように、月は1日にだけ付ける（それ以外は日にちだけ）
+        val dateText = SpannableStringBuilder(
+            date?.let { if (it.dayOfMonth == 1) "${it.monthValue}/${it.dayOfMonth}" else "${it.dayOfMonth}" } ?: day.date,
+        )
         // 日・祝日は赤、土は青（曜日の漢字の色と、その日の列の背景のうっすらした色）
         val kind = when {
             date == null -> null
@@ -338,9 +341,9 @@ object WidgetRenderer {
         val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 } ?: 120
         val columns = store.days.coerceAtMost(forecast?.days?.size ?: store.days).coerceAtLeast(1)
         val columnWidth = (width - ARROW_WIDTH_DP * 2) / columns
-        // 幅いっぱいに使う。いちばん幅をとるのは日付の行「10/26 (月)」で、文字の大きさの 4.7 倍ほど。
+        // 幅いっぱいに使う。いちばん幅をとるのは日付の行で、月がつく1日「11/1 (日)」が文字の大きさの 4.15 倍ほど。
         // 日の枠の左右のすきま（1dp ずつ）と、端末ごとの字体の違いの分に少し余裕を見る
-        val byWidth = (columnWidth - 2f) / (4.7f * DATE_SCALE * 1.03f)
+        val byWidth = (columnWidth - 2f) / (4.15f * DATE_SCALE * 1.03f)
         // 1行分のときは地名と降水確率の行がないので、そのぶん高さを見込まない。
         // 行の高さは文字の大きさの 1.25 倍として、日付 1.25 ＋ すきま 0.4 ＋ アイコン 2.1 ＋ 気温（TEMP_SCALE 倍）
         val compact = height < COMPACT_HEIGHT_DP
