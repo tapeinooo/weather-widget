@@ -54,12 +54,12 @@
             android:id="@+id/zone_left_on"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="3"
+            android:layout_weight="1"
             android:visibility="gone">
 
             <TextView
                 android:id="@+id/zone_left_on_arrow"
-                android:layout_width="22dp"
+                android:layout_width="12dp"
                 android:layout_height="wrap_content"
                 android:layout_gravity="start|center_vertical"
                 android:gravity="center"
@@ -76,12 +76,12 @@
             android:id="@+id/zone_left_off"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="3"
+            android:layout_weight="1"
             android:visibility="gone">
 
             <TextView
                 android:id="@+id/zone_left_off_arrow"
-                android:layout_width="22dp"
+                android:layout_width="12dp"
                 android:layout_height="wrap_content"
                 android:layout_gravity="start|center_vertical"
                 android:gravity="center"
@@ -102,12 +102,12 @@
             android:id="@+id/zone_right_on"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="3"
+            android:layout_weight="1"
             android:visibility="gone">
 
             <TextView
                 android:id="@+id/zone_right_on_arrow"
-                android:layout_width="22dp"
+                android:layout_width="12dp"
                 android:layout_height="wrap_content"
                 android:layout_gravity="end|center_vertical"
                 android:gravity="center"
@@ -124,12 +124,12 @@
             android:id="@+id/zone_right_off"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="3"
+            android:layout_weight="1"
             android:visibility="gone">
 
             <TextView
                 android:id="@+id/zone_right_off_arrow"
-                android:layout_width="22dp"
+                android:layout_width="12dp"
                 android:layout_height="wrap_content"
                 android:layout_gravity="end|center_vertical"
                 android:gravity="center"

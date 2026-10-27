@@ -76,7 +76,8 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
     }
 }
 
-private const val ARROW_WIDTH_DP = 22f
+/** 左右の矢印の幅（dp）。矢印の字が入るぎりぎりの幅。 */
+private const val ARROW_WIDTH_DP = 12f
 /** ウィジェットの上下の余白（dp）。できる限り小さくする。 */
 private const val PADDING_DP = 1f
 
@@ -181,7 +182,7 @@ object WidgetRenderer {
     }
 
     /**
-     * 左右の押す場所。ウィジェットの高さいっぱいに、左右を幅の3割ずつ、真ん中を4割にとる。
+     * 左右の押す場所。ウィジェットの高さいっぱいに、左右を幅の6分の1ずつ（7日並べたときの1日分）、真ん中を3分の2にとる。
      * 真ん中は何もしない場所で、押すと下の Yahoo!天気 が開く。
      * 行き止まり（これ以上送れない側）は、押しても何も起きない（Yahoo!天気 も開かない）。
      * 押す場所はレイアウトに全部置いてあり、表示を切り替えるだけ（足したり消したりしない）。
