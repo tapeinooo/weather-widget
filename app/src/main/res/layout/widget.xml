@@ -29,7 +29,8 @@
         android:gravity="center"
         android:paddingTop="1dp"
         android:singleLine="true"
-        android:textColor="#FFEDEDED" />
+        android:textColor="#FFEDEDED"
+        android:textSize="9dp" />
 
     <TextView
         android:id="@+id/message"
@@ -39,6 +40,7 @@
         android:gravity="center"
         android:maxLines="4"
         android:textColor="#FFBDBDBD"
+        android:textSize="6dp"
         android:visibility="gone" />
 
     <!-- 押す場所。ウィジェットの高さいっぱいに、左右を広く、真ん中を狭くとる。
@@ -68,7 +70,8 @@
             android:background="@drawable/arrow_bg"
             android:duplicateParentState="true"
                 android:text="‹"
-                android:textColor="@color/arrow_text" />
+                android:textColor="@color/arrow_text"
+                android:textSize="14dp" />
         </FrameLayout>
 
         <!-- 行き止まり（押しても何も起きない）ときの左の場所 -->
@@ -88,7 +91,8 @@
                 android:paddingTop="10dp"
                 android:paddingBottom="10dp"
                 android:text="‹"
-                android:textColor="#40EDEDED" />
+                android:textColor="#40EDEDED"
+                android:textSize="14dp" />
         </FrameLayout>
 
         <!-- 真ん中は何もしない場所。押すと下の Yahoo!天気 が開く -->
@@ -116,7 +120,8 @@
             android:background="@drawable/arrow_bg"
             android:duplicateParentState="true"
                 android:text="›"
-                android:textColor="@color/arrow_text" />
+                android:textColor="@color/arrow_text"
+                android:textSize="14dp" />
         </FrameLayout>
 
         <!-- 行き止まり（押しても何も起きない）ときの右の場所 -->
@@ -136,7 +141,8 @@
                 android:paddingTop="10dp"
                 android:paddingBottom="10dp"
                 android:text="›"
-                android:textColor="#40EDEDED" />
+                android:textColor="#40EDEDED"
+                android:textSize="14dp" />
         </FrameLayout>
     </LinearLayout>
 </FrameLayout>

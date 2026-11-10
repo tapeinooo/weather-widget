@@ -92,7 +92,7 @@ private fun SettingsScreen() {
     fun applyDisplay() {
         store.days = days
         store.textScale = textScale
-        WidgetRenderer.updateAll(context)
+        WidgetRenderer.updateAll(context, "設定")
     }
 
     val workInfos by remember {
@@ -223,5 +223,17 @@ private fun SettingsScreen() {
             "ホーム画面を長押し →「ウィジェット」→「たっぴぃず天気」で置けます。1時間ごとに自動で更新します。",
             style = MaterialTheme.typography.bodySmall,
         )
+
+        // 文字の大きさが勝手に変わる原因を調べるための記録（新しい順）
+        HorizontalDivider()
+        var showSizeLog by remember { mutableStateOf(false) }
+        OutlinedButton(onClick = { showSizeLog = !showSizeLog }) {
+            Text(if (showSizeLog) "文字の大きさの記録を閉じる" else "文字の大きさの記録（確認用）")
+        }
+        if (showSizeLog) {
+            WidgetRenderer.sizeLog(context).ifEmpty { listOf("まだ記録がありません") }.forEach {
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+        }
     }
 }

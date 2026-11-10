@@ -17,6 +17,8 @@ import android.view.View
 import android.widget.RemoteViews
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -30,7 +32,7 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
             // 新しい版を入れたら、ウィジェットを新しい版で作り直す
-            WidgetRenderer.updateAll(context)
+            WidgetRenderer.updateAll(context, "新しい版")
             return
         }
         if (intent.action == ACTION_NOTHING) return
@@ -47,13 +49,13 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
     }
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        ids.forEach { WidgetRenderer.render(context, manager, it) }
+        ids.forEach { WidgetRenderer.render(context, manager, it, "onUpdate") }
         WeatherWorker.schedulePeriodic(context)
         if (WeatherStore(context).loadForecast() == null) WeatherWorker.refreshNow(context, replace = false)
     }
 
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) {
-        WidgetRenderer.render(context, manager, id)
+        WidgetRenderer.render(context, manager, id, "大きさの変更")
     }
 
     override fun onDeleted(context: Context, ids: IntArray) {
@@ -101,9 +103,9 @@ object WidgetRenderer {
     private val BLUE = Color.parseColor("#5B95F2")
 
     /** 置かれているすべてのウィジェットを描き直す。 */
-    fun updateAll(context: Context) {
+    fun updateAll(context: Context, why: String) {
         val manager = AppWidgetManager.getInstance(context)
-        ids(context, manager).forEach { render(context, manager, it) }
+        ids(context, manager).forEach { render(context, manager, it, why) }
     }
 
     /** 送った位置を元（今日が左端）に戻す。 */
@@ -113,20 +115,20 @@ object WidgetRenderer {
         ids(context, manager).forEach { id ->
             if (state.getInt(offsetKey(id), 0) != 0) {
                 state.edit().remove(offsetKey(id)).apply()
-                render(context, manager, id)
+                render(context, manager, id, "位置を戻す")
             }
         }
     }
 
     fun forget(context: Context, id: Int) {
-        state(context).edit().remove(offsetKey(id)).remove(versionKey(id)).apply()
+        state(context).edit().remove(offsetKey(id)).remove(versionKey(id)).remove(sizeKey(id)).apply()
     }
 
     /** ウィジェット全体を作って渡す。 */
-    fun render(context: Context, manager: AppWidgetManager, id: Int) {
+    fun render(context: Context, manager: AppWidgetManager, id: Int, why: String) {
         val store = WeatherStore(context)
         val forecast = store.loadForecast()
-        val m = metrics(context, manager, id, store, forecast)
+        val m = metrics(context, manager, id, store, forecast, why)
         val rv = RemoteViews(context.packageName, R.layout.widget)
         rv.setOnClickPendingIntent(R.id.root, yahooIntent(context))
         state(context).edit().putLong(versionKey(id), appVersion(context)).apply()
@@ -173,7 +175,7 @@ object WidgetRenderer {
         state.edit().putInt(offsetKey(id), offset).apply()
         // ホーム画面にある部品が前の版のものなら、差分は効かないので全体を渡し直す
         if (state.getLong(versionKey(id), -1) != appVersion(context)) {
-            render(context, manager, id)
+            render(context, manager, id, "送り（前の版）")
             return
         }
 
@@ -320,6 +322,7 @@ object WidgetRenderer {
      * 文字の大きさの決め方。1 単位＝日付の文字の大きさ（dp）。
      * 1列の幅に「20℃ / 10℃」が収まり、縦に全部の行が収まる大きさを基本にし、設定の％を掛ける。
      * 大きさは dp で指定するので、端末の文字サイズ設定には左右されない。
+     * レイアウトにも標準（1 単位＝8dp ほど）の大きさを書いておく（描画時の指定が効かなかったときに、Android の既定の大きな文字にならないように）。
      */
     class Metrics(val unit: Float, val density: Float, val compact: Boolean) {
         /** 上下の余白。 */
@@ -334,11 +337,20 @@ object WidgetRenderer {
         fun daysTop(): Int = if (compact) padding() else padding() + px(1.15f * 1.4f + 0.3f)
     }
 
-    private fun metrics(context: Context, manager: AppWidgetManager, id: Int, store: WeatherStore, forecast: Forecast?): Metrics {
+    /** why があれば（全体を描くとき）、文字の大きさを決めた値を記録に残す。 */
+    private fun metrics(
+        context: Context, manager: AppWidgetManager, id: Int, store: WeatherStore, forecast: Forecast?, why: String? = null,
+    ): Metrics {
         val options = manager.getAppWidgetOptions(id)
-        // 縦向きのときの幅と高さ（dp）
-        val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH).takeIf { it > 0 } ?: 320
-        val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 } ?: 120
+        // 縦向きのときの幅と高さ（dp）。ホーム画面から届いていないときは、前に使った大きさを使う
+        // （仮の大きさを使うと、そのときだけ文字の大きさが変わってしまう）
+        val state = state(context)
+        val reportedWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+        val reportedHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)
+        val saved = state.getString(sizeKey(id), null)?.split("x")?.mapNotNull { it.toIntOrNull() }?.takeIf { it.size == 2 }
+        val width = reportedWidth.takeIf { it > 0 } ?: saved?.get(0) ?: 320
+        val height = reportedHeight.takeIf { it > 0 } ?: saved?.get(1) ?: 120
+        if (reportedWidth > 0 && reportedHeight > 0) state.edit().putString(sizeKey(id), "${reportedWidth}x$reportedHeight").apply()
         val columns = store.days.coerceAtMost(forecast?.days?.size ?: store.days).coerceAtLeast(1)
         val columnWidth = (width - ARROW_WIDTH_DP * 2) / columns
         // 幅いっぱいに使う。いちばん幅をとるのは日付の行で、月がつく1日「11/1 (日)」が文字の大きさの 4.15 倍ほど。
@@ -351,6 +363,24 @@ object WidgetRenderer {
             (if (compact) 0f else (1.15f * 1.4f + 0.3f) + 1.25f) // 地名の行と降水確率の行
         val byHeight = (height - PADDING_DP * 2 - 2f) / rows // 2dp は日ごとの枠の上下の余白
         val unit = minOf(byWidth, byHeight).coerceIn(4f, 48f) * store.textScale / 100f
+        if (why != null) {
+            val sizes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                @Suppress("DEPRECATION")
+                options.getParcelableArrayList<android.util.SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+                    ?.joinToString(",") { "${it.width.toInt()}x${it.height.toInt()}" }
+            } else null
+            val line = String.format(
+                Locale.JAPAN, "%s #%d %s｜幅 %d〜%d 高さ %d〜%d%s｜使った %dx%d%s｜%d列%s｜文字 %.1fdp（%d%%）",
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM/dd HH:mm:ss")), id, why,
+                reportedWidth, options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH),
+                options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT), reportedHeight,
+                sizes?.let { " [$it]" } ?: "",
+                width, height, if (reportedWidth > 0 && reportedHeight > 0) "" else "（前の値）",
+                columns, if (compact) " 1行" else "", unit, store.textScale,
+            )
+            val log = (listOf(line) + sizeLog(context)).take(SIZE_LOG_MAX)
+            state.edit().putString(SIZE_LOG_KEY, log.joinToString("\n")).apply()
+        }
         return Metrics(unit, context.resources.displayMetrics.density, compact)
     }
 
@@ -365,6 +395,14 @@ object WidgetRenderer {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) it.longVersionCode else @Suppress("DEPRECATION") it.versionCode.toLong()
         }
 
+    /** 文字の大きさを決めた値の記録（新しい順）。設定画面の確認用。 */
+    fun sizeLog(context: Context): List<String> =
+        state(context).getString(SIZE_LOG_KEY, null)?.split("\n")?.filter { it.isNotEmpty() }.orEmpty()
+
+    private const val SIZE_LOG_KEY = "size_log"
+    private const val SIZE_LOG_MAX = 40
+
+    private fun sizeKey(id: Int) = "size_$id"
     private fun versionKey(id: Int) = "version_$id"
     private fun offsetKey(id: Int) = "offset_$id"
 }

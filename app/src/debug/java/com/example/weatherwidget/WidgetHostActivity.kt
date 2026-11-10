@@ -44,7 +44,7 @@ class WidgetHostActivity : Activity() {
         val frame = FrameLayout(this).apply { setBackgroundColor(Color.parseColor("#3C6E91")) }
         frame.addView(view, FrameLayout.LayoutParams(dp(w + 16), dp(h + 16), Gravity.CENTER_HORIZONTAL or Gravity.TOP).apply { topMargin = dp(80) })
         setContentView(frame)
-        WidgetRenderer.updateAll(this)
+        WidgetRenderer.updateAll(this, "確認用の画面")
     }
 
     override fun onDestroy() {

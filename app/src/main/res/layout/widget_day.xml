@@ -15,7 +15,8 @@
         android:id="@+id/day_date"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:singleLine="true" />
+        android:singleLine="true"
+        android:textSize="11dp" />
 
     <LinearLayout
         android:layout_width="wrap_content"
@@ -53,11 +54,13 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:singleLine="true"
-        android:textColor="#FFEDEDED" />
+        android:textColor="#FFEDEDED"
+        android:textSize="12dp" />
 
     <TextView
         android:id="@+id/day_bottom"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:singleLine="true" />
+        android:singleLine="true"
+        android:textSize="8dp" />
 </LinearLayout>
