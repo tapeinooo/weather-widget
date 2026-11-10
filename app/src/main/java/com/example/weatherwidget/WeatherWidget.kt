@@ -92,12 +92,12 @@ private const val DATE_SCALE = 1.4f
 private enum class DayKind { RED, BLUE }
 
 /** 気温の数字の大きさ（unit を 1 として）。 */
-private const val TEMP_SCALE = 1.5f
+private const val TEMP_SCALE = 1.8f
 
 object WidgetRenderer {
     private const val YAHOO_WEATHER = "jp.co.yahoo.android.weather.type1"
 
-    /** 日付の長さを測るための筆（大きさは比だけ使うので何でもよい）。 */
+    /** 日付や気温の長さを測るための筆（大きさは比だけ使うので何でもよい）。 */
     private val DATE_PAINT = android.graphics.Paint().apply { textSize = 100f }
 
     private val WHITE = Color.parseColor("#EDEDED")
@@ -228,6 +228,15 @@ object WidgetRenderer {
         return page
     }
 
+    /**
+     * 文字が列の幅に入る大きさ（dp）。wanted より大きくはしない。
+     * 日の枠の左右のすきま（1dp ずつ）と、端末ごとの字体の違いの分の余裕は、列の数を決めるときと同じ。
+     */
+    private fun fitToColumn(text: CharSequence, wanted: Float, m: Metrics): Float {
+        val perSize = DATE_PAINT.measureText(text.toString()) / DATE_PAINT.textSize
+        return minOf(wanted, (m.columnWidth - 2f) / (perSize * 1.03f))
+    }
+
     private fun dayView(context: Context, day: DayForecast, isToday: Boolean, m: Metrics, showMonth: Boolean): RemoteViews {
         val rv = RemoteViews(context.packageName, R.layout.widget_day)
         val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
@@ -268,11 +277,8 @@ object WidgetRenderer {
         rv.setTextViewText(R.id.day_date, dateText)
         // 過ぎた日（観測の結果）は日付を少し暗くする
         rv.setTextColor(R.id.day_date, if (day.observed) GRAY else WHITE)
-        // 列の幅に入りきらない日付（月が付いた「11/10 (月)」や、文字の大きさの設定が大きいとき）は、入る大きさまで縮める。
-        // 日の枠の左右のすきま（1dp ずつ）と、端末ごとの字体の違いの分の余裕は、列の数を決めるときと同じ
-        val perSize = DATE_PAINT.measureText(dateText.toString()) / DATE_PAINT.textSize
-        val fitSize = (m.columnWidth - 2f) / (perSize * 1.03f)
-        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_DIP, minOf(m.unit * DATE_SCALE, fitSize))
+        // 列の幅に入りきらない日付（月が付いた「11/10 (月)」や、文字の大きさの設定が大きいとき）は、入る大きさまで縮める
+        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_DIP, fitToColumn(dateText, m.unit * DATE_SCALE, m))
 
         val icons = day.icons
         val iconPx = m.px(1.9f)
@@ -293,8 +299,8 @@ object WidgetRenderer {
             .append(" / ")
             .append("${day.min ?: "--"}", ForegroundColorSpan(BLUE), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         rv.setTextViewText(R.id.day_temps, temps)
-        // ℃ をなくした分、数字を大きくする
-        rv.setTextViewTextSize(R.id.day_temps, TypedValue.COMPLEX_UNIT_DIP, m.unit * TEMP_SCALE)
+        // ℃ をなくした分、数字を大きくする（「21 / 10」や「-3 / -8」が列に入りきらないときは、入る大きさまで縮める）
+        rv.setTextViewTextSize(R.id.day_temps, TypedValue.COMPLEX_UNIT_DIP, fitToColumn(temps, m.unit * TEMP_SCALE, m))
 
         val bottom = if (day.observed) {
             // 過ぎた日は降水確率の代わりに降った量

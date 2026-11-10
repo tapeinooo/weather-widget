@@ -55,7 +55,7 @@
         android:layout_height="wrap_content"
         android:singleLine="true"
         android:textColor="#FFEDEDED"
-        android:textSize="12dp" />
+        android:textSize="14dp" />
 
     <TextView
         android:id="@+id/day_bottom"
