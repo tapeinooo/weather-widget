@@ -97,9 +97,7 @@ private const val TEMP_SCALE = 1.5f
 object WidgetRenderer {
     private const val YAHOO_WEATHER = "jp.co.yahoo.android.weather.type1"
 
-    /** 列の幅を決めるときに基準にした、いちばん長い日付（月が1桁で日付が1日）。 */
-    private const val WIDEST_DATE = "11/1 (日)"
-    /** 日付の長さをくらべるための筆（大きさは比だけ使うので何でもよい）。 */
+    /** 日付の長さを測るための筆（大きさは比だけ使うので何でもよい）。 */
     private val DATE_PAINT = android.graphics.Paint().apply { textSize = 100f }
 
     private val WHITE = Color.parseColor("#EDEDED")
@@ -270,9 +268,11 @@ object WidgetRenderer {
         rv.setTextViewText(R.id.day_date, dateText)
         // 過ぎた日（観測の結果）は日付を少し暗くする
         rv.setTextColor(R.id.day_date, if (day.observed) GRAY else WHITE)
-        // 列の幅は「11/1 (日)」が入るように決めてあるので、それより長い日付（「11/10 (月)」など）は入るように縮める
-        val fit = (DATE_PAINT.measureText(WIDEST_DATE) / DATE_PAINT.measureText(dateText.toString())).coerceAtMost(1f)
-        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_DIP, m.unit * DATE_SCALE * fit)
+        // 列の幅に入りきらない日付（月が付いた「11/10 (月)」や、文字の大きさの設定が大きいとき）は、入る大きさまで縮める。
+        // 日の枠の左右のすきま（1dp ずつ）と、端末ごとの字体の違いの分の余裕は、列の数を決めるときと同じ
+        val perSize = DATE_PAINT.measureText(dateText.toString()) / DATE_PAINT.textSize
+        val fitSize = (m.columnWidth - 2f) / (perSize * 1.03f)
+        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_DIP, minOf(m.unit * DATE_SCALE, fitSize))
 
         val icons = day.icons
         val iconPx = m.px(1.9f)
@@ -331,7 +331,7 @@ object WidgetRenderer {
      * 大きさは dp で指定するので、端末の文字サイズ設定には左右されない。
      * レイアウトにも標準（1 単位＝8dp ほど）の大きさを書いておく（描画時の指定が効かなかったときに、Android の既定の大きな文字にならないように）。
      */
-    class Metrics(val unit: Float, val density: Float, val compact: Boolean) {
+    class Metrics(val unit: Float, val density: Float, val compact: Boolean, val columnWidth: Float) {
         /** 上下の余白。 */
         fun padding(): Int = dp(PADDING_DP)
 
@@ -388,7 +388,7 @@ object WidgetRenderer {
             val log = (listOf(line) + sizeLog(context)).take(SIZE_LOG_MAX)
             state.edit().putString(SIZE_LOG_KEY, log.joinToString("\n")).apply()
         }
-        return Metrics(unit, context.resources.displayMetrics.density, compact)
+        return Metrics(unit, context.resources.displayMetrics.density, compact, columnWidth)
     }
 
     private fun ids(context: Context, manager: AppWidgetManager): IntArray =
