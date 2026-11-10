@@ -97,6 +97,11 @@ private const val TEMP_SCALE = 1.5f
 object WidgetRenderer {
     private const val YAHOO_WEATHER = "jp.co.yahoo.android.weather.type1"
 
+    /** 列の幅を決めるときに基準にした、いちばん長い日付（月が1桁で日付が1日）。 */
+    private const val WIDEST_DATE = "11/1 (日)"
+    /** 日付の長さをくらべるための筆（大きさは比だけ使うので何でもよい）。 */
+    private val DATE_PAINT = android.graphics.Paint().apply { textSize = 100f }
+
     private val WHITE = Color.parseColor("#EDEDED")
     private val GRAY = Color.parseColor("#BDBDBD")
     private val RED = Color.parseColor("#F2635B")
@@ -221,16 +226,16 @@ object WidgetRenderer {
     private fun pageView(context: Context, days: List<DayForecast>, today: String, m: Metrics): RemoteViews {
         val page = RemoteViews(context.packageName, R.layout.widget_page)
         page.removeAllViews(R.id.page)
-        days.forEachIndexed { i, d -> page.addChild(R.id.page, dayView(context, d, d.date == today, m), i) }
+        days.forEachIndexed { i, d -> page.addChild(R.id.page, dayView(context, d, d.date == today, m, showMonth = i == 0), i) }
         return page
     }
 
-    private fun dayView(context: Context, day: DayForecast, isToday: Boolean, m: Metrics): RemoteViews {
+    private fun dayView(context: Context, day: DayForecast, isToday: Boolean, m: Metrics, showMonth: Boolean): RemoteViews {
         val rv = RemoteViews(context.packageName, R.layout.widget_day)
         val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
-        // カレンダーと同じように、月は1日にだけ付ける（それ以外は日にちだけ）
+        // 月は1日と、ページの左端の日にだけ付ける（それ以外は日にちだけ）
         val dateText = SpannableStringBuilder(
-            date?.let { if (it.dayOfMonth == 1) "${it.monthValue}/${it.dayOfMonth}" else "${it.dayOfMonth}" } ?: day.date,
+            date?.let { if (it.dayOfMonth == 1 || showMonth) "${it.monthValue}/${it.dayOfMonth}" else "${it.dayOfMonth}" } ?: day.date,
         )
         // 日・祝日は赤、土は青（曜日の漢字の色と、その日の列の背景のうっすらした色）
         val kind = when {
@@ -265,7 +270,9 @@ object WidgetRenderer {
         rv.setTextViewText(R.id.day_date, dateText)
         // 過ぎた日（観測の結果）は日付を少し暗くする
         rv.setTextColor(R.id.day_date, if (day.observed) GRAY else WHITE)
-        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_DIP, m.unit * DATE_SCALE)
+        // 列の幅は「11/1 (日)」が入るように決めてあるので、それより長い日付（「11/10 (月)」など）は入るように縮める
+        val fit = (DATE_PAINT.measureText(WIDEST_DATE) / DATE_PAINT.measureText(dateText.toString())).coerceAtMost(1f)
+        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_DIP, m.unit * DATE_SCALE * fit)
 
         val icons = day.icons
         val iconPx = m.px(1.9f)
@@ -353,7 +360,7 @@ object WidgetRenderer {
         if (reportedWidth > 0 && reportedHeight > 0) state.edit().putString(sizeKey(id), "${reportedWidth}x$reportedHeight").apply()
         val columns = store.days.coerceAtMost(forecast?.days?.size ?: store.days).coerceAtLeast(1)
         val columnWidth = (width - ARROW_WIDTH_DP * 2) / columns
-        // 幅いっぱいに使う。いちばん幅をとるのは日付の行で、月がつく1日「11/1 (日)」が文字の大きさの 4.15 倍ほど。
+        // 幅いっぱいに使う。いちばん幅をとるのは日付の行で、月がつく1日「11/1 (日)」が文字の大きさの 4.15 倍ほど（これより長い日付は日付だけ縮める）。
         // 日の枠の左右のすきま（1dp ずつ）と、端末ごとの字体の違いの分に少し余裕を見る
         val byWidth = (columnWidth - 2f) / (4.15f * DATE_SCALE * 1.03f)
         // 1行分のときは地名と降水確率の行がないので、そのぶん高さを見込まない。
