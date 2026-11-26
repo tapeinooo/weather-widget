@@ -1,22 +1,13 @@
 package com.example.weatherwidget
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
-import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
-import androidx.work.Constraints
-import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -24,23 +15,23 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.concurrent.TimeUnit
 
 /**
- * アプリ自身の更新。GitHub の最新リリース（タグ「v1.22」など。タグは versionName と同じにする決まり）を見て、
- * 今の版より新しければ添付の APK を落として、Android の PackageInstaller で入れる。
- * 確認画面が要るとき（初めての更新や、端末が求めるとき）は、画面を開いていればそのまま出し、裏で見つけたときは通知で知らせる。
+ * アプリ自身の更新（設定画面の「更新を確認」から）。GitHub の最新リリース（タグ「v1.22」など。タグは versionName と同じにする決まり）を見て、
+ * 今の版より新しければ添付の APK を落として、Android の PackageInstaller で入れる。確認画面が要るときはそのまま出す。
  */
 object AppUpdater {
     private const val TAG = "AppUpdater"
     private const val LATEST = "https://api.github.com/repos/tapeinooo/weather-widget/releases/latest"
     private const val PREFS = "app_update"
-    private const val KEY_ATTEMPTED = "attempted_tag"
     private const val KEY_STATUS = "status"
-    const val CHANNEL = "app_update"
-    const val EXTRA_INTERACTIVE = "interactive"
 
     class Release(val tag: String, val version: String, val apkUrl: String)
+
+    /** v1.22 で登録した自動更新の予定を取り消す（自動更新はやめた）。 */
+    fun cancelAutoUpdate(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork("app_update_periodic")
+    }
 
     fun currentVersion(context: Context): String =
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0"
@@ -87,25 +78,13 @@ object AppUpdater {
         }
     }
 
-    /**
-     * 新しい版があれば入れる。interactive は設定画面のボタンから（画面が見えている）。
-     * 裏の確認では、一度試した版はもう試さない（壊れた添付で何度も落とさないように）。ボタンからは何度でも試す。
-     * 結果を文章で返す（画面に出す）。
-     */
-    suspend fun check(context: Context, interactive: Boolean): String {
+    /** 新しい版があれば入れる。結果を文章で返す（画面に出す）。 */
+    suspend fun check(context: Context): String {
         val app = context.applicationContext
         val message = try {
             val release = latest()
             val current = currentVersion(app)
-            when {
-                !isNewer(release.version, current) -> "最新の版です（v$current）"
-                !interactive && prefs(app).getString(KEY_ATTEMPTED, null) == release.tag ->
-                    "${release.tag} は前に試したので、自動では入れません（「更新を確認」で入れられます）"
-                else -> {
-                    prefs(app).edit().putString(KEY_ATTEMPTED, release.tag).apply()
-                    install(app, release, interactive)
-                }
-            }
+            if (isNewer(release.version, current)) install(app, release) else "最新の版です（v$current）"
         } catch (e: Exception) {
             Log.w(TAG, "更新を確認できませんでした", e)
             "更新を確認できませんでした：${e.message ?: e}"
@@ -114,7 +93,7 @@ object AppUpdater {
         return message
     }
 
-    private suspend fun install(context: Context, release: Release, interactive: Boolean): String = withContext(Dispatchers.IO) {
+    private suspend fun install(context: Context, release: Release): String = withContext(Dispatchers.IO) {
         val file = File(context.cacheDir, "update.apk")
         val conn = open(release.apkUrl)
         try {
@@ -153,7 +132,7 @@ object AppUpdater {
                 }
             }
             // 結果を受け取る。システムが中身を書き込むので、Android 12 以降は MUTABLE にする
-            val intent = Intent(context, UpdateReceiver::class.java).putExtra(EXTRA_INTERACTIVE, interactive)
+            val intent = Intent(context, UpdateReceiver::class.java)
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or
                 (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
             session.commit(PendingIntent.getBroadcast(context, sessionId, intent, flags).intentSender)
@@ -161,31 +140,9 @@ object AppUpdater {
         file.delete()
         "${release.tag} を入れています…"
     }
-
-    /** 確認画面を出せないとき（裏で見つけたとき）に、押すと確認画面が開く通知を出す。 */
-    fun notifyConfirm(context: Context, confirm: Intent) {
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "アプリの更新", NotificationManager.IMPORTANCE_DEFAULT))
-        val open = PendingIntent.getActivity(
-            context, 0, confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val notification = android.app.Notification.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("たぺいの天気の新しい版があります")
-            .setContentText("押すと更新します")
-            .setContentIntent(open)
-            .setAutoCancel(true)
-            .build()
-        runCatching { manager.notify(1, notification) }.onFailure { Log.w(TAG, "通知を出せませんでした", it) }
-    }
-
-    fun canNotify(context: Context): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 }
 
-/** 入れた結果を受け取る。確認画面が要るときは、画面からなら開き、裏からなら通知を出す。 */
+/** 入れた結果を受け取る。確認画面が要るときは開く（ボタンを押した直後で、設定画面が見えている）。 */
 class UpdateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
@@ -194,38 +151,14 @@ class UpdateReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 @Suppress("DEPRECATION")
                 val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
-                if (intent.getBooleanExtra(AppUpdater.EXTRA_INTERACTIVE, false)) {
-                    runCatching { context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                        .onFailure { AppUpdater.notifyConfirm(context, confirm) }
-                } else {
-                    AppUpdater.notifyConfirm(context, confirm)
-                }
+                runCatching { context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    .onFailure { prefs.edit().putString("status", "確認画面を開けませんでした：${it.message}").apply() }
             }
             PackageInstaller.STATUS_SUCCESS -> prefs.edit().putString("status", "更新しました").apply()
             else -> {
                 val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "状態 $status"
                 prefs.edit().putString("status", "更新できませんでした：$message").apply()
             }
-        }
-    }
-}
-
-/** 6時間ごとに、新しい版がないかを裏で確かめる。 */
-class AppUpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result {
-        AppUpdater.check(applicationContext, interactive = false)
-        return Result.success()
-    }
-
-    companion object {
-        private const val PERIODIC = "app_update_periodic"
-
-        fun schedule(context: Context) {
-            val request = PeriodicWorkRequestBuilder<AppUpdateWorker>(6, TimeUnit.HOURS)
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .build()
-            WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
         }
     }
 }

@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WeatherWorker.schedulePeriodic(this)
-        AppUpdateWorker.schedule(this)
+        AppUpdater.cancelAutoUpdate(this)
         // ウィジェットの「編集」から開かれたときは、閉じてもウィジェットが消えないよう OK を返しておく
         val widgetId = intent?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
             ?: AppWidgetManager.INVALID_APPWIDGET_ID
@@ -92,14 +92,6 @@ private fun SettingsScreen() {
     var days by remember { mutableStateOf(store.days) }
     var textScale by remember { mutableStateOf(store.textScale) }
     var updateMessage by remember { mutableStateOf(AppUpdater.status(context)) }
-
-    // 裏で新しい版を見つけたときの通知のために、通知の許可をもらっておく（Android 13 以降）
-    val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !AppUpdater.canNotify(context)) {
-            notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
 
     fun applyDisplay() {
         store.days = days
@@ -240,7 +232,7 @@ private fun SettingsScreen() {
         HorizontalDivider()
         Text("アプリの更新", style = MaterialTheme.typography.titleMedium)
         Text(
-            "今の版：v${AppUpdater.currentVersion(context)}。6時間ごとに自動で確かめ、新しい版があれば入れます（確認が要るときは通知でお知らせします）。",
+            "今の版：v${AppUpdater.currentVersion(context)}。押すと GitHub に新しい版がないかを確かめ、あれば入れます。",
             style = MaterialTheme.typography.bodySmall,
         )
         OutlinedButton(onClick = {
@@ -251,7 +243,7 @@ private fun SettingsScreen() {
                 )
             } else {
                 updateMessage = "確認しています…"
-                scope.launch { updateMessage = AppUpdater.check(context, interactive = true) }
+                scope.launch { updateMessage = AppUpdater.check(context) }
             }
         }) { Text("更新を確認") }
         updateMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }

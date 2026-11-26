@@ -51,7 +51,7 @@ class WeatherWidgetReceiver : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         ids.forEach { WidgetRenderer.render(context, manager, it, "onUpdate") }
         WeatherWorker.schedulePeriodic(context)
-        AppUpdateWorker.schedule(context)
+        AppUpdater.cancelAutoUpdate(context)
         if (WeatherStore(context).loadForecast() == null) WeatherWorker.refreshNow(context, replace = false)
     }
 

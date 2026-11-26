@@ -12,9 +12,9 @@ android {
         applicationId = "com.example.weatherwidget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
+        versionCode = 24
         // GitHub のリリースのタグは「v」＋ versionName にする（アプリの更新はタグで新しい版を見分ける）
-        versionName = "1.22"
+        versionName = "1.23"
     }
 
     buildTypes {
