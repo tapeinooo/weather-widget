@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">たっぴぃず天気</string>
-    <string name="widget_name">たっぴぃず天気</string>
+    <string name="app_name">たぺいの天気</string>
+    <string name="widget_name">たぺいの天気</string>
     <string name="widget_description">今日からの天気予報を横に並べて表示</string>
 </resources>

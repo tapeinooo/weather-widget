@@ -3,8 +3,10 @@ package com.example.weatherwidget
 import android.Manifest
 import android.appwidget.AppWidgetManager
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WeatherWorker.schedulePeriodic(this)
+        AppUpdateWorker.schedule(this)
         // ウィジェットの「編集」から開かれたときは、閉じてもウィジェットが消えないよう OK を返しておく
         val widgetId = intent?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
             ?: AppWidgetManager.INVALID_APPWIDGET_ID
@@ -88,6 +91,15 @@ private fun SettingsScreen() {
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
     var days by remember { mutableStateOf(store.days) }
     var textScale by remember { mutableStateOf(store.textScale) }
+    var updateMessage by remember { mutableStateOf(AppUpdater.status(context)) }
+
+    // 裏で新しい版を見つけたときの通知のために、通知の許可をもらっておく（Android 13 以降）
+    val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !AppUpdater.canNotify(context)) {
+            notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     fun applyDisplay() {
         store.days = days
@@ -132,7 +144,7 @@ private fun SettingsScreen() {
         modifier = Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("たっぴぃず天気", style = MaterialTheme.typography.headlineSmall)
+        Text("たぺいの天気", style = MaterialTheme.typography.headlineSmall)
 
         Text("場所：${place.name}", style = MaterialTheme.typography.titleMedium)
         val today = forecast?.let { f -> f.days.firstOrNull { it.date == f.today() } }
@@ -220,9 +232,29 @@ private fun SettingsScreen() {
         }
 
         Text(
-            "ホーム画面を長押し →「ウィジェット」→「たっぴぃず天気」で置けます。1時間ごとに自動で更新します。",
+            "ホーム画面を長押し →「ウィジェット」→「たぺいの天気」で置けます。1時間ごとに自動で更新します。",
             style = MaterialTheme.typography.bodySmall,
         )
+
+        // アプリ自身の更新（GitHub の最新リリースから入れる）
+        HorizontalDivider()
+        Text("アプリの更新", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "今の版：v${AppUpdater.currentVersion(context)}。6時間ごとに自動で確かめ、新しい版があれば入れます（確認が要るときは通知でお知らせします）。",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedButton(onClick = {
+            if (!context.packageManager.canRequestPackageInstalls()) {
+                updateMessage = "「この提供元のアプリを許可」をオンにしてから、もう一度押してください"
+                context.startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")),
+                )
+            } else {
+                updateMessage = "確認しています…"
+                scope.launch { updateMessage = AppUpdater.check(context, interactive = true) }
+            }
+        }) { Text("更新を確認") }
+        updateMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
 
         // 文字の大きさが勝手に変わる原因を調べるための記録（新しい順）
         HorizontalDivider()
