@@ -26,6 +26,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Card
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -92,6 +94,14 @@ private fun SettingsScreen() {
     var days by remember { mutableStateOf(store.days) }
     var textScale by remember { mutableStateOf(store.textScale) }
     var updateMessage by remember { mutableStateOf(AppUpdater.status(context)) }
+    // 新しい版のタグ（開いたときに確かめる。なければ null）
+    var newer by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        runCatching {
+            val r = AppUpdater.latest()
+            if (AppUpdater.isNewer(r.version, AppUpdater.currentVersion(context))) newer = r.tag
+        }
+    }
 
     fun applyDisplay() {
         store.days = days
@@ -137,6 +147,31 @@ private fun SettingsScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("たぺいの天気", style = MaterialTheme.typography.headlineSmall)
+
+        // アプリの更新（共通ルール：設定のいちばん上）。開いたときに新しい版があるか確かめて知らせる
+        if (newer != null) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Text("新しい版 $newer があります。下の「更新を確認」で入れられます。", modifier = Modifier.padding(12.dp))
+            }
+        }
+        Text(
+            "今の版：v${AppUpdater.currentVersion(context)}。押すと GitHub に新しい版がないかを確かめ、あれば入れます。",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedButton(onClick = {
+            if (!context.packageManager.canRequestPackageInstalls()) {
+                updateMessage = "「この提供元のアプリを許可」をオンにしてから、もう一度押してください"
+                context.startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")),
+                )
+            } else {
+                updateMessage = "確認しています…"
+                scope.launch { updateMessage = AppUpdater.check(context) }
+            }
+        }) { Text("更新を確認") }
+        updateMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        HorizontalDivider()
+
 
         Text("場所：${place.name}", style = MaterialTheme.typography.titleMedium)
         val today = forecast?.let { f -> f.days.firstOrNull { it.date == f.today() } }
@@ -227,26 +262,6 @@ private fun SettingsScreen() {
             "ホーム画面を長押し →「ウィジェット」→「たぺいの天気」で置けます。1時間ごとに自動で更新します。",
             style = MaterialTheme.typography.bodySmall,
         )
-
-        // アプリ自身の更新（GitHub の最新リリースから入れる）
-        HorizontalDivider()
-        Text("アプリの更新", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "今の版：v${AppUpdater.currentVersion(context)}。押すと GitHub に新しい版がないかを確かめ、あれば入れます。",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        OutlinedButton(onClick = {
-            if (!context.packageManager.canRequestPackageInstalls()) {
-                updateMessage = "「この提供元のアプリを許可」をオンにしてから、もう一度押してください"
-                context.startActivity(
-                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")),
-                )
-            } else {
-                updateMessage = "確認しています…"
-                scope.launch { updateMessage = AppUpdater.check(context) }
-            }
-        }) { Text("更新を確認") }
-        updateMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
 
         // 文字の大きさが勝手に変わる原因を調べるための記録（新しい順）
         HorizontalDivider()
