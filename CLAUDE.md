@@ -16,4 +16,5 @@ https://raw.githubusercontent.com/tapeinooo/app-rules/main/RULES.md を開く）
 
 - 【例外】版の番号：手で付けていた頃（v1.25・versionCode 26）より大きくするため、gradle.properties の versionOffset=100（versionCode に足す）と versionMajor=2（versionName は 2.0.<実行番号>）を使う。
 - アプリの更新は AppUpdater.kt（PackageInstaller で入れる。Android 12 以降、2回目からは確認なしで入る）。タグの versionName をくらべる。
+- 【例外】署名の鍵は app/release.keystore（前から使っている固定の鍵。変えない）。公開リポジトリなので鍵そのものは入れず、GitHub の Secret RELEASE_KEYSTORE_B64（base64）に置き、Actions がそこから app/release.keystore を作る。Mac の控えは ~/keys/weather-widget-release.keystore（手元でビルドするときは app/ に置く）。app/release.keystore は絶対にコミットしない。
 - 本物の気象庁などにつなぐテスト（*LiveTest）は GitHub Actions では外している。

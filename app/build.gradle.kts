@@ -28,7 +28,7 @@ android {
         versionName = appVersionName
     }
 
-    // 更新で上書きするには毎回同じ鍵で署名する。自分用なので鍵はリポジトリに置く（共通ルール）
+    // 更新で上書きするには毎回同じ鍵で署名する。鍵は公開リポジトリに置かず、Actions が Secret から app/release.keystore を作る
     signingConfigs {
         create("release") {
             storeFile = file("release.keystore")

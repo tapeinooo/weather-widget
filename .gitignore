@@ -6,3 +6,6 @@ local.properties
 .DS_Store
 captures/
 .kotlin/
+
+# 署名の鍵は Secret から作る。リポジトリには入れない（Mac の控えは ~/keys）
+app/release.keystore
