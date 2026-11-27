@@ -98,9 +98,6 @@ private const val TEMP_SCALE = 1.8f
 object WidgetRenderer {
     private const val YAHOO_WEATHER = "jp.co.yahoo.android.weather.type1"
 
-    /** 日付や気温の長さを測るための筆（大きさは比だけ使うので何でもよい）。 */
-    private val DATE_PAINT = android.graphics.Paint().apply { textSize = 100f }
-
     private val WHITE = Color.parseColor("#EDEDED")
     private val GRAY = Color.parseColor("#BDBDBD")
     private val RED = Color.parseColor("#F2635B")
@@ -137,7 +134,7 @@ object WidgetRenderer {
         rv.setOnClickPendingIntent(R.id.root, yahooIntent(context))
         state(context).edit().putLong(versionKey(id), appVersion(context)).apply()
         rv.setTextViewText(R.id.place, store.place.name)
-        rv.setTextViewTextSize(R.id.place, TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.15f)
+        rv.setTextViewTextSize(R.id.place, TypedValue.COMPLEX_UNIT_PX, m.textPx(1.15f))
         rv.setViewVisibility(R.id.place, if (m.compact) View.GONE else View.VISIBLE)
 
         // ホーム画面は前に作った部品に上書きで当てはめるので、出す・隠すは毎回両方を指定する
@@ -150,17 +147,18 @@ object WidgetRenderer {
         if (forecast == null || !ready) {
             val error = store.lastError
             rv.setTextViewText(R.id.message, if (error == null) "読み込み中…" else "更新できませんでした\n$error")
-            rv.setTextViewTextSize(R.id.message, TypedValue.COMPLEX_UNIT_DIP, m.unit * 0.8f)
+            rv.setTextViewTextSize(R.id.message, TypedValue.COMPLEX_UNIT_PX, m.textPx(0.8f))
             manager.updateAppWidget(id, rv)
             return
         }
 
         val state = state(context)
         val window = DayWindow(forecast.days, forecast.today(), store.days, state.getInt(offsetKey(id), 0))
-        // ページを全部入れて今の位置にそろえる。Android 12 以降は番号付き（stable）で入れ、
-        // 描き直しでもページを作り直さずに使い回させる（番号付きで使い回させるには、先に removeAllViews を置く決まり）
+        // ページを全部入れて今の位置にそろえる。描き直しのたびに全部作り直させる
+        // （番号付きでホーム画面に使い回させると、前の大きさが一部の列に残ることがあった）
+        val sizes = DaySizes.of(forecast.days, m)
         rv.removeAllViews(R.id.flipper)
-        window.pages.forEachIndexed { i, page -> rv.addChild(R.id.flipper, pageView(context, page, forecast.today(), m), i) }
+        window.pages.forEach { page -> rv.addView(R.id.flipper, pageView(context, page, forecast.today(), m, sizes)) }
         rv.setDisplayedChild(R.id.flipper, window.start)
         setupZones(context, rv, id, window, m, withIntents = true)
         manager.updateAppWidget(id, rv)
@@ -201,8 +199,8 @@ object WidgetRenderer {
             rv.setViewVisibility(off, if (enabled) View.GONE else View.VISIBLE)
             if (!withIntents) return
             for (zone in intArrayOf(on, off)) rv.setViewPadding(zone, 0, m.daysTop(), 0, m.padding())
-            rv.setTextViewTextSize(onArrow, TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.8f)
-            rv.setTextViewTextSize(offArrow, TypedValue.COMPLEX_UNIT_DIP, m.unit * 1.8f)
+            rv.setTextViewTextSize(onArrow, TypedValue.COMPLEX_UNIT_PX, m.textPx(1.8f))
+            rv.setTextViewTextSize(offArrow, TypedValue.COMPLEX_UNIT_PX, m.textPx(1.8f))
             val request = id * 4 + if (delta > 0) 1 else 0
             val shift = Intent(context, WeatherWidgetReceiver::class.java)
                 .setAction(WeatherWidgetReceiver.ACTION_SHIFT)
@@ -217,28 +215,14 @@ object WidgetRenderer {
         side(1, window.canGoForward, R.id.zone_right_on, R.id.zone_right_off, R.id.zone_right_on_arrow, R.id.zone_right_off_arrow)
     }
 
-    /** Android 12 以降は番号付きで入れる（描き直しで使い回される）。 */
-    private fun RemoteViews.addChild(parent: Int, child: RemoteViews, stableId: Int) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) addStableView(parent, child, stableId) else addView(parent, child)
-    }
-
-    private fun pageView(context: Context, days: List<DayForecast>, today: String, m: Metrics): RemoteViews {
+    private fun pageView(context: Context, days: List<DayForecast>, today: String, m: Metrics, sizes: DaySizes): RemoteViews {
         val page = RemoteViews(context.packageName, R.layout.widget_page)
         page.removeAllViews(R.id.page)
-        days.forEachIndexed { i, d -> page.addChild(R.id.page, dayView(context, d, d.date == today, m, showMonth = i == 0), i) }
+        days.forEachIndexed { i, d -> page.addView(R.id.page, dayView(context, d, d.date == today, m, sizes, showMonth = i == 0)) }
         return page
     }
 
-    /**
-     * 文字が列の幅に入る大きさ（dp）。wanted より大きくはしない。
-     * 日の枠の左右のすきま（1dp ずつ）と、端末ごとの字体の違いの分の余裕は、列の数を決めるときと同じ。
-     */
-    private fun fitToColumn(text: CharSequence, wanted: Float, m: Metrics): Float {
-        val perSize = DATE_PAINT.measureText(text.toString()) / DATE_PAINT.textSize
-        return minOf(wanted, (m.columnWidth - 2f) / (perSize * 1.03f))
-    }
-
-    private fun dayView(context: Context, day: DayForecast, isToday: Boolean, m: Metrics, showMonth: Boolean): RemoteViews {
+    private fun dayView(context: Context, day: DayForecast, isToday: Boolean, m: Metrics, sizes: DaySizes, showMonth: Boolean): RemoteViews {
         val rv = RemoteViews(context.packageName, R.layout.widget_day)
         val date = runCatching { LocalDate.parse(day.date) }.getOrNull()
         // 月は1日と、ページの左端の日にだけ付ける（それ以外は日にちだけ）
@@ -278,11 +262,10 @@ object WidgetRenderer {
         rv.setTextViewText(R.id.day_date, dateText)
         // 過ぎた日（観測の結果）は日付を少し暗くする
         rv.setTextColor(R.id.day_date, if (day.observed) GRAY else WHITE)
-        // 列の幅に入りきらない日付（月が付いた「11/10 (月)」や、文字の大きさの設定が大きいとき）は、入る大きさまで縮める
-        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_DIP, fitToColumn(dateText, m.unit * DATE_SCALE, m))
+        rv.setTextViewTextSize(R.id.day_date, TypedValue.COMPLEX_UNIT_PX, sizes.datePx)
 
         val icons = day.icons
-        val iconPx = m.px(1.9f)
+        val iconPx = sizes.iconPx
         rv.setImageViewResource(R.id.icon_main, icons?.main?.icon ?: R.drawable.wx_dash)
         rv.sizeImage(R.id.icon_main, iconPx)
         val sub = icons?.sub
@@ -300,8 +283,8 @@ object WidgetRenderer {
             .append(" / ")
             .append("${day.min ?: "--"}", ForegroundColorSpan(BLUE), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         rv.setTextViewText(R.id.day_temps, temps)
-        // ℃ をなくした分、数字を大きくする（「21 / 10」や「-3 / -8」が列に入りきらないときは、入る大きさまで縮める）
-        rv.setTextViewTextSize(R.id.day_temps, TypedValue.COMPLEX_UNIT_DIP, fitToColumn(temps, m.unit * TEMP_SCALE, m))
+        // ℃ をなくした分、数字を大きくする
+        rv.setTextViewTextSize(R.id.day_temps, TypedValue.COMPLEX_UNIT_PX, sizes.tempPx)
 
         val bottom = if (day.observed) {
             // 過ぎた日は降水確率の代わりに降った量
@@ -311,7 +294,7 @@ object WidgetRenderer {
         }
         rv.setTextViewText(R.id.day_bottom, bottom?.first ?: "")
         rv.setTextColor(R.id.day_bottom, if (bottom?.second == true) BLUE else WHITE)
-        rv.setTextViewTextSize(R.id.day_bottom, TypedValue.COMPLEX_UNIT_DIP, m.unit)
+        rv.setTextViewTextSize(R.id.day_bottom, TypedValue.COMPLEX_UNIT_PX, m.textPx(1f))
         rv.setViewVisibility(R.id.day_bottom, if (m.compact) View.GONE else View.VISIBLE)
         return rv
     }
@@ -337,12 +320,16 @@ object WidgetRenderer {
      * 1列の幅に「20℃ / 10℃」が収まり、縦に全部の行が収まる大きさを基本にし、設定の％を掛ける。
      * 大きさは dp で指定するので、端末の文字サイズ設定には左右されない。
      * レイアウトにも標準（1 単位＝8dp ほど）の大きさを書いておく（描画時の指定が効かなかったときに、Android の既定の大きな文字にならないように）。
+     * 日付・アイコン・気温の大きさは DaySizes で全部の日にそろえる。
      */
     class Metrics(val unit: Float, val density: Float, val compact: Boolean, val columnWidth: Float) {
         /** 上下の余白。 */
         fun padding(): Int = dp(PADDING_DP)
 
         fun px(factor: Float): Int = (unit * factor * density).toInt().coerceAtLeast(1)
+
+        /** 文字の大きさ（画素）。画素で渡すので、ホーム画面の文字の倍率や表示の倍率の読み違いに左右されない。 */
+        fun textPx(factor: Float): Float = unit * factor * density
 
         /** dp を画素にする。 */
         fun dp(dp: Float): Int = (dp * density).toInt()
@@ -367,7 +354,7 @@ object WidgetRenderer {
         if (reportedWidth > 0 && reportedHeight > 0) state.edit().putString(sizeKey(id), "${reportedWidth}x$reportedHeight").apply()
         val columns = store.days.coerceAtMost(forecast?.days?.size ?: store.days).coerceAtLeast(1)
         val columnWidth = (width - ARROW_WIDTH_DP * 2) / columns
-        // 幅いっぱいに使う。いちばん幅をとるのは日付の行で、月がつく1日「11/1 (日)」が文字の大きさの 4.15 倍ほど（これより長い日付は日付だけ縮める）。
+        // 幅いっぱいに使う。いちばん幅をとるのは日付の行で、月がつく1日「11/1 (日)」が文字の大きさの 4.15 倍ほど（これより長い日付があれば DaySizes で全部の日付を縮める）。
         // 日の枠の左右のすきま（1dp ずつ）と、端末ごとの字体の違いの分に少し余裕を見る
         val byWidth = (columnWidth - 2f) / (4.15f * DATE_SCALE * 1.03f)
         // 1行分のときは地名と降水確率の行がないので、そのぶん高さを見込まない。
@@ -419,6 +406,38 @@ object WidgetRenderer {
     private fun sizeKey(id: Int) = "size_$id"
     private fun versionKey(id: Int) = "version_$id"
     private fun offsetKey(id: Int) = "offset_$id"
+}
+
+/**
+ * 日付・アイコン・気温の大きさ（画素）。全部の日（全部のページ）で同じ大きさにする。
+ * 設定の大きさ（unit × 倍率）を基本に、いちばん長い日付（どの日もページの左端になりうるので、月を付けた形）と
+ * いちばん長い気温が列の幅に入るまで縮める。アイコンは2つと矢印が列に並ぶまで縮める。
+ */
+class DaySizes(val datePx: Float, val tempPx: Float, val iconPx: Int) {
+    companion object {
+        /** 長さを測るための筆（大きさは比だけ使うので何でもよい）。 */
+        private val PAINT = android.graphics.Paint().apply { textSize = 100f }
+
+        fun of(days: List<DayForecast>, m: WidgetRenderer.Metrics): DaySizes {
+            // 日の枠の左右のすきま（1dp ずつ）を除いた幅。端末ごとの字体の違いの分に 3% 余裕を見る
+            val room = (m.columnWidth - 2f) / 1.03f
+            fun fit(texts: List<String>, wanted: Float): Float {
+                val widest = texts.maxOfOrNull { PAINT.measureText(it) / PAINT.textSize } ?: return wanted
+                return minOf(wanted, room / widest)
+            }
+            val dates = days.mapNotNull { d ->
+                runCatching { LocalDate.parse(d.date) }.getOrNull()?.let {
+                    "${it.monthValue}/${it.dayOfMonth} (${it.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.JAPAN)})"
+                }
+            }
+            val temps = days.map { "${it.max ?: "--"} / ${it.min ?: "--"}" }
+            val dateDp = fit(dates, m.unit * DATE_SCALE)
+            val tempDp = fit(temps, m.unit * TEMP_SCALE)
+            // アイコン2つ＋矢印（0.6）が列に入る大きさ
+            val iconDp = minOf(m.unit * 1.9f, (room - m.unit * 0.6f) / 2f)
+            return DaySizes(dateDp * m.density, tempDp * m.density, (iconDp * m.density).toInt().coerceAtLeast(1))
+        }
+    }
 }
 
 /**
