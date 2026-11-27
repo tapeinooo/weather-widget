@@ -66,7 +66,7 @@ class WeatherStore(context: Context) {
         const val MIN_DAYS = 1
         const val MAX_DAYS = 7
         const val MIN_SCALE = 50
-        const val MAX_SCALE = 200
+        const val MAX_SCALE = 100
         private const val KEY_DAYS = "days"
         private const val KEY_JMA_AREA = "jmaArea"
         private const val KEY_ERROR = "lastError"

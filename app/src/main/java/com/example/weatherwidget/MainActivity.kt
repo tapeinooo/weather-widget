@@ -188,7 +188,7 @@ private fun SettingsScreen() {
             steps = (WeatherStore.MAX_SCALE - WeatherStore.MIN_SCALE) / 5 - 1,
         )
         Text(
-            "100% はウィジェットの幅と高さにちょうど収まる大きさです。端末の文字サイズの設定には左右されません。",
+            "100% はウィジェットの幅と高さに収まるいちばん大きい大きさです。小さくしたいときに下げてください。端末の文字サイズの設定には左右されません。",
             style = MaterialTheme.typography.bodySmall,
         )
         OutlinedButton(onClick = { textScale = 100; applyDisplay() }) { Text("100% に戻す") }
