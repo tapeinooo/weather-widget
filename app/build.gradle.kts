@@ -28,13 +28,14 @@ android {
         versionName = appVersionName
     }
 
-    // 更新で上書きするには毎回同じ鍵で署名する。鍵は公開リポジトリに置かず、Actions が Secret から app/release.keystore を作る
+    // 更新で上書きするには毎回同じ鍵で署名する。v1.25 まで使っていた Mac の debug 鍵（変えない）。
+    // 鍵は公開リポジトリに置かず、Actions が Secret（DEBUG_KEYSTORE_B64）から app/debug.keystore を作る
     signingConfigs {
         create("release") {
-            storeFile = file("release.keystore")
-            storePassword = "tapeiweather"
-            keyAlias = "weather"
-            keyPassword = "tapeiweather"
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
     }
 

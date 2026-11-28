@@ -18,17 +18,17 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
-      # 署名の鍵は公開リポジトリに置かず、Secret（RELEASE_KEYSTORE_B64）から作る。
+      # 署名の鍵は公開リポジトリに置かず、Secret（DEBUG_KEYSTORE_B64）から作る。
       # Secret がないときは、ビルドしない（ほかの鍵で作ったものを出さないため）
       - name: Restore signing key
         env:
-          KEY_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          KEY_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
         run: |
           if [ -z "$KEY_B64" ]; then
-            echo "::warning::Secret RELEASE_KEYSTORE_B64 がありません。Mac から入れるまでビルドしません"
+            echo "::warning::Secret DEBUG_KEYSTORE_B64 がありません。Mac から入れるまでビルドしません"
             echo "NOKEY=1" >> "$GITHUB_ENV"
           else
-            echo "$KEY_B64" | base64 -d > app/release.keystore
+            echo "$KEY_B64" | base64 -d > app/debug.keystore
           fi
       - name: Build APK
         if: env.NOKEY != '1'

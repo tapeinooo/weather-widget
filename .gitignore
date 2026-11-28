@@ -7,5 +7,5 @@ local.properties
 captures/
 .kotlin/
 
-# 署名の鍵は Secret から作る。リポジトリには入れない（Mac の控えは ~/keys）
-app/release.keystore
+# 署名の鍵は Secret から作る。リポジトリには入れない（Mac の控えは ~/keys/android-debug.keystore）
+app/debug.keystore
